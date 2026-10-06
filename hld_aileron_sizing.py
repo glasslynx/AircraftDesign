@@ -72,8 +72,6 @@ tailstrike_deg = 16.7      # tail-strike angle [deg] for the step-5 check. None 
 
 # DATCOM inputs for the clean CLmax (high-aspect-ratio method, Lecture 2 slides 29-33)
 clmax_airfoil = 2.28     # 2D airfoil c_lmax at M ~ 0.2 and the stall-speed Re (~11e6 on the MAC) [-]
-                         #   2.28 = XFOIL-type estimate (NeuralFoil) for SC(2)-0612 at Re 11e6.
-                         #   REPLACE with your own flow5 2D polar value.
 airfoil_dat   = "NASA SC2-0612 AIRFOIL.dat"   # coordinate file for Delta Y (path relative to this script, or absolute)
 DeltaY_user   = None     # LE sharpness parameter [% chord]. None = compute it from airfoil_dat
 # Note: Fig. 2 is for untwisted, constant-section wings; the 2 deg twist of the wing is neglected.

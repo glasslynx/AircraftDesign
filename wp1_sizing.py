@@ -52,11 +52,11 @@ class Inputs:
     s_takeoff: float = 1296.0          # take-off field length, AEO, ISA SL[m]
     s_landing: float = 1210.0          # landing field length, ISA SL      [m]
 
-    R_design: float = 2019e3           # design mission range     2019         [m]
+    R_design: float = 2019e3           # design mission range              [m]
     payload_design: float = 7200.0     # payload on the design mission     [kg]
-    R_maxfuel: float = 2574e3          # range at MTOM and full fuel 2574      [m]
+    R_maxfuel: float = 2574e3          # range at MTOM and full fuel       [m]
     payload_maxfuel: float = 6355.0    # payload at that point             [kg]
-    R_ferry: float = 2963e3            # ferry range, zero payload     2963    [m]
+    R_ferry: float = 2963e3            # ferry range, zero payload         [m]
 
     # --------------------------------------------------------------------
     # 2.  CABIN / PAYLOAD BREAKDOWN                                     
@@ -65,8 +65,8 @@ class Inputs:
     mass_per_pax: float = 90.0         # pax + baggage allowance           [kg]
     seats_abreast: int = 4             # cabin cross-section               [-]
     seat_pitch: float = 0.79           # seat pitch                        [m]
-    d_fuselage: float = 2.90           # external fuselage diameter        [m]
-    l_fuselage: float = 30.50          # fuselage length                   [m]
+    d_fuselage: float = 3.00           # external fuselage diameter        [m]
+    l_fuselage: float = 29.90          # fuselage length                   [m]
 
     # --------------------------------------------------------------------
     # 3.  CONFIGURATION
@@ -77,7 +77,7 @@ class Inputs:
     # --------------------------------------------------------------------
     # 4.  WING / AERODYNAMICS                                        
     # --------------------------------------------------------------------
-    A: float = 10.5                    # aspect ratio                      [-]
+    A: float = 11.0                    # aspect ratio                      [-]
     # S_wet/S:  "auto"   - component build-up, iterated with the wing area
     #           "manual" - use Swet_over_S below unchanged
     swet_mode: str = "auto"
@@ -110,9 +110,9 @@ class Inputs:
 
     # Mass fractions used in the constraints                            
     f_takeoff: float = 1.00            # W/W_TO at take-off                [-]
-    f_climb: float = 1.00              # W/W_TO for the climb-rate case    [-]
-    f_landing: float = 0.92            # MLM/MTOM                          [-]
-    f_approach: float = 0.92           # W/W_TO on approach                [-]
+    f_climb: float = 0.95              # W/W_TO for the climb-rate case    [-]
+    f_landing: float = 0.8            # MLM/MTOM                          [-]
+    f_approach: float = 0.8           # W/W_TO on approach                [-]
     # f_cruise is derived as 1 - 0.5*M_f (mid-cruise) unless overridden:
     f_cruise_override: float | None = None
 
@@ -139,11 +139,11 @@ class Inputs:
     #     flap: "clean" | "takeoff" | "landing"      gear: "up" | "down"
     # --------------------------------------------------------------------
     climb_gradients: tuple = (
-        ("CS 25.119",    3.2, 0, 0.92, "landing", "down", 0.0, 0.0),
+        ("CS 25.119",    3.2, 0, 0.80, "landing", "down", 0.0, 0.0),
         ("CS 25.121(a)", 0.0, 1, 1.00, "takeoff", "down", 0.0, 0.0),
         ("CS 25.121(b)", 2.4, 1, 1.00, "takeoff", "up",   0.0, 0.0),
         ("CS 25.121(c)", 1.2, 1, 1.00, "clean",   "up",   0.0, 0.0),
-        ("CS 25.121(d)", 2.1, 1, 0.92, "landing", "up",   0.0, 0.0),
+        ("CS 25.121(d)", 2.1, 1, 1.00, "landing", "up",   0.0, 0.0),
     )
     # n_operating_engines = 0 means "all engines operating" (AEO)
 
@@ -164,8 +164,8 @@ class Inputs:
     # --------------------------------------------------------------------
     # 10. DESIGN POINT  (set after inspecting the matching diagram)
     # --------------------------------------------------------------------
-    design_WS: float = 4400.0          # wing loading   W_TO/S            [N/m2]
-    design_TW: float = 0.345           # thrust loading T_TO/W_TO         [-]
+    design_WS: float = 5200.0          # wing loading   W_TO/S            [N/m2]
+    design_TW: float = 0.338           # thrust loading T_TO/W_TO         [-]
 
     # --------------------------------------------------------------------
     # 11. PLOTTING

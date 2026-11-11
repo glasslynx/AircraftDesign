@@ -1,0 +1,46 @@
+WP3.4 optimiser (Class I <-> Class II, OEM method Torenbeek, fixed equipment formulas, objective fuel)
+
+Optimum W/S per AR (feasibility boundary):
+     AR    W/S    MTOM   fuel      S    L/D   SAR  active constraint
+    9.5  5,039  31,238  5,019  60.79  15.52   653  RCS-01
+   10.0  5,042  31,350  4,982  60.97  15.72   659  RCS-01
+   10.5  5,047  31,466  4,949  61.14  15.92   664  landing, RCS-01
+   10.6  5,047  31,489  4,944  61.19  15.96   665  RCS-01
+
+OPTIMUM (active constraint: RCS-01; AR at the edge of AR_GRID (10.6, the AR limit)): W/S 5,047 N/m^2, AR 10.6
+  MTOM 31,489 kg, OEM 19,346 kg, S 61.19 m^2, b 25.47 m
+  C_D0 0.02074 (no wave 0.01997), e 0.7609, mid-cruise C_L 0.470, L/D 15.96, M_DD 0.804
+  design-mission fuel 4,944 kg (408 m/kg block, incl. reserves); fuel capacity 5,734 kg = 7.17 m^3 vs wing box 7.05 m^3 (wing 4.67, centre 1.67, inboard 0.71)
+  SAR (mid-cruise, M 0.77, FL350) 665 m/kg at 29,017 kg; best at FL420 with thrust available 713 m/kg (thrust ceiling FL420; unconstrained best FL427, 714 m/kg)
+  driving T/W Cruise speed 0.295 vs available 0.387 (+31 %); W/S limit 5,049 (MLM/MTOM 0.955)
+  cruise optimum of this wing at M 0.77: C_L 0.676 (L/D 17.22) vs 0.470 flown (L/D 15.99); best mid-cruise altitude 12,970 m (FL426) vs FL350
+  WP2 wing: C_Lmax 1.852 / 2.604 / 2.926 (needed 2.926); flap for it to 0.719 b/2 (ailerons from 0.72 b/2); 20 deg roll in 2.51 s at V_SR0 51.8 m/s (69 % travel unused); pb/2V 0.0773; alpha at C_Lmax 17.7 deg vs tail strike 16 (exceeds, as in WP2)
+  status: all constraints met
+
+SELECTED DESIGN POINT: W/S 5,046 N/m^2, AR 10.6
+  MTOM 31,490 kg, OEM 19,346 kg, S 61.20 m^2, b 25.47 m
+  C_D0 0.02074 (no wave 0.01996), e 0.7609, mid-cruise C_L 0.470, L/D 15.96, M_DD 0.804
+  design-mission fuel 4,944 kg (408 m/kg block, incl. reserves); fuel capacity 5,734 kg = 7.17 m^3 vs wing box 7.05 m^3 (wing 4.67, centre 1.67, inboard 0.71)
+  SAR (mid-cruise, M 0.77, FL350) 665 m/kg at 29,018 kg; best at FL420 with thrust available 713 m/kg (thrust ceiling FL420; unconstrained best FL427, 714 m/kg)
+  driving T/W Cruise speed 0.295 vs available 0.387 (+31 %); W/S limit 5,049 (MLM/MTOM 0.955)
+  cruise optimum of this wing at M 0.77: C_L 0.676 (L/D 17.22) vs 0.470 flown (L/D 15.99); best mid-cruise altitude 12,971 m (FL426) vs FL350
+  WP2 wing: C_Lmax 1.852 / 2.604 / 2.926 (needed 2.925); flap for it to 0.719 b/2 (ailerons from 0.72 b/2); 20 deg roll in 2.51 s at V_SR0 51.8 m/s (69 % travel unused); pb/2V 0.0773; alpha at C_Lmax 17.7 deg vs tail strike 16 (exceeds, as in WP2)
+  status: all constraints met
+  margins:
+  constraint                                   value vs limit       margin
+  thrust (T/W available vs driving)            0.387 vs 0.295      +30.9 %
+  landing / minimum-speed W/S                  5,046 vs 5,049       +0.1 %
+  fuel volume [m^3]                              7.17 vs 7.20    +0.03 m^3
+  L/D (REQ-WNG-EFF-02)                          15.96 vs 15.4        +0.56
+  M_DD vs M_cruise                              0.804 vs 0.77       +0.034
+  span [m]                                      25.47 vs 36.0     +10.53 m
+  REQ-HLD-01 C_Lmax landing                    2.926 vs 2.925       +0.001
+  REQ-HLD-02 C_Lmax take-off                     2.604 vs 2.1       +0.504
+  REQ-RCS-01 flap span needed [b/2]            0.719 vs 0.720       +0.001
+  REQ-RCS-02 20 deg roll time [s]                 2.51 vs 5.0      +2.49 s
+  REQ-RCS-03 aileron travel unused               69 % vs 25 %        +44 %
+  REQ-RCS-04 pb/2V                             0.0773 vs 0.07      +0.0073
+  distance to the feasibility boundary at AR 10.6: W/S 5,047 (+1 N/m^2, first constraint hit: RCS-01)
+  cost of the margin vs the optimum: MTOM +1 kg (+0.0 %), design fuel +0 kg (+0.0 %), SAR -0 m/kg (-0.0 %), S +0.0 m^2
+
+Reference W/S 4,202 / AR 10.5 (same settings): MTOM 32,477 kg, fuel 5,152 kg, SAR 637 m/kg, S 75.8 m^2

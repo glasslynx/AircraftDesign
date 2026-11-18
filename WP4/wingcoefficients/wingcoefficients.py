@@ -207,6 +207,37 @@ class WingAerodynamicsInterpolator:
         D_prime = self.drag_per_unit_span(y, q, CL_d=CL_d, alpha_d=alpha_d)
         return L_prime * np.cos(alpha_rad) + D_prime * np.sin(alpha_rad)
 
+# =========================================================================
+    # SECTION B.3.2: Callable Distribution Functions f(y) [N/m] and [N*m/m]
+    # =========================================================================
+
+    def lift_per_unit_span_func(self, q, CL_d=None, alpha_d=None):
+        """Returns a callable function L'(y) = CL_d(y) * q * c(y) [N/m]."""
+        # Validate CL_d / alpha_d immediately when creating the function
+        self._resolve_scaling_factor(CL_d=CL_d, alpha_d=alpha_d)
+        return lambda y: self.CL_d(y, CL_d=CL_d, alpha_d=alpha_d) * q * self.chord(y)
+
+    def drag_per_unit_span_func(self, q, CL_d=None, alpha_d=None):
+        """Returns a callable function D'(y) = CD_d(y) * q * c(y) [N/m]."""
+        self._resolve_scaling_factor(CL_d=CL_d, alpha_d=alpha_d)
+        return lambda y: self.CD_d(y, CL_d=CL_d, alpha_d=alpha_d) * q * self.chord(y)
+
+    def moment_per_unit_span_func(self, q, CL_d=None, alpha_d=None):
+        """Returns a callable function M'(y) = CM_d(y) * q * c(y)^2 [N*m/m]."""
+        self._resolve_scaling_factor(CL_d=CL_d, alpha_d=alpha_d)
+        return lambda y: self.CM_d(y, CL_d=CL_d, alpha_d=alpha_d) * q * (self.chord(y) ** 2)
+
+    def normal_force_per_unit_span_func(self, q, CL_d=None, alpha_d=None):
+        """Returns a callable function N'(y) [N/m] transforming L'(y) and D'(y) by alpha_d."""
+        self._resolve_scaling_factor(CL_d=CL_d, alpha_d=alpha_d)
+        if alpha_d is not None:
+            alpha_rad = np.radians(alpha_d)
+        else:
+            alpha_rad = self.alpha_from_CL(CL_d, degrees=False)
+
+        L_func = self.lift_per_unit_span_func(q, CL_d=CL_d, alpha_d=alpha_d)
+        D_func = self.drag_per_unit_span_func(q, CL_d=CL_d, alpha_d=alpha_d)
+        return lambda y: L_func(y) * np.cos(alpha_rad) + D_func(y) * np.sin(alpha_rad)
 
 # =============================================================================
 # EXAMPLE USAGE & VERIFICATION PLOTS

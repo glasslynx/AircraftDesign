@@ -1,25 +1,3 @@
-"""
-WP4.1 - Importing the Flow5 operating-point exports into Python  (reader Appendix B.3)
-
-Flow5's export differs from the XFLR5 file described in the reader:
-  - the spanwise table header starts with  y(m)  instead of  y-span
-  - the columns are:  y(m) Re Ai Cd_i Cd_v Cl CP.x(%) Trans.top Trans.bot
-                      Cm_i Cm_v Bending.mom Vd.x Vd.y Vd.z F.x F.y F.z gamma
-  - there is NO chord column -> the chord is computed from the planform, c(y)
-  - inviscid run -> use Cd_i (induced drag) and Cm_i (inviscid pitching moment)
-
-What this file does:
-  1. Reads ONE exported file (alpha = 0 deg or alpha = 10 deg).
-  2. Takes the spanwise table under "Main wing" and keeps the positive-y half.
-  3. Computes the wing CL by integrating the local Cl over the span, using
-     S = 61.20 m^2, so CL0/CL10 use the same reference area as CL_d = nW/(qS).
-  4. Makes cubic interpolants Cl(y), Cd(y), Cm(y) (reader B.3).
-  5. Plots them so you can check.
-
-Learning example: understand every line and adapt it yourselves. The reader
-makes you responsible for verifying any generated code.
-"""
-
 import numpy as np
 import scipy as sp
 from scipy import interpolate, integrate

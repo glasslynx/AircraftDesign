@@ -1,17 +1,25 @@
 #imports
 #import astropy.units as n
 import numpy as np
+import math
 #import scipy as sp
 
 #because we don't know the position of the centroid, 
 #the initial position will be given as a function of x_ref amd z_ref where x_ref starts at the leading edge and z_ref at the chord line
 #wingbox dimension parameters
 
-h_frontspar =
+y=[]
+c= 3.866 - 0.19798y #chord length as a function of y
+
+t_frontspar = #thickness of spar
+t_rearspar = 
+t_upskin = #thickness of the upper part of the trapezoid
+t_lowskin = 
+h_frontspar = 
 h_rearspar = 
-xref_frontspar =
+xref_frontspar = 0.2*c
 zref_frontspar =
-xref_rearspar =
+xref_rearspar = 0.7*c
 zref_rearspar = 
 stringer_area =
 xref_up_stringer = []
@@ -52,9 +60,19 @@ def zpositionLOWstringers(xref_frontspar, xref_rearspar, wingbox_zref_dimension,
     zref_Low_stringer.append(a)
   return(zref_Low_stringer)
 
+def lengthSkinWingbox(wingbox_zref_dimension, xref_frontspar, xref_rearspar)#calculate the length of the up or the low part of the trapezoid (skin section)
+  L_upskin = math.sqrt((xref_rearspar-xref_frontspar)**2+(wingbox_zref_dimension[2]-wingbox_zref_dimension[0])**2)
+  L_lowskin = math.sqrt((xref_rearspar-xref_frontspar)**2+(wingbox_zref_dimension[3]-wingbox_zref_dimension[1])**2)
+  return[L_upskin, L_lowskin]
+
+A_f_spar = t_frontspar * h_frontspar #calculating the Area
+A_r_spar = t_rearspar * h_rearspar
+
 
 wingbox_zref_dimension = wingboxdimension(zref_frontspar, zref_rearspar, h_frontspar, h_rearspar)
 print(wingbox_zref_dimension)
 print(zpositionUPstringers(xref_frontspar, xref_rearspar, wingbox_zref_dimension, xref_up_stringer))
 print(zpositionLOWstringers(xref_frontspar, xref_rearspar, wingbox_zref_dimension, xref_low_stringer))
+
+
 

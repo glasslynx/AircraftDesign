@@ -1,0 +1,217 @@
+"""
+Dino runner game - no installs needed (uses tkinter, which comes with Python).
+
+Controls:
+    Space / Up arrow   jump (also starts and restarts the game)
+    Down arrow         duck (and fall faster while in the air)
+    Esc                quit
+
+Run with:  python dino_game.py
+"""
+import random
+import tkinter as tk
+
+# ---------------------------------------------------------------- settings ---
+WIDTH, HEIGHT = 900, 300
+GROUND_Y = 250                 # y of the ground line
+FPS = 60
+GRAVITY = 0.9
+JUMP_SPEED = -15.5
+START_SPEED = 7.0
+SPEED_GAIN = 0.0025            # speed increase per frame
+MAX_SPEED = 20.0
+BG, FG = "#f7f7f7", "#535353"
+
+
+class DinoGame:
+    def __init__(self, root):
+        self.root = root
+        root.title("Dino Runner")
+        root.resizable(False, False)
+        self.canvas = tk.Canvas(root, width=WIDTH, height=HEIGHT, bg=BG,
+                                highlightthickness=0)
+        self.canvas.pack()
+
+        root.bind("<space>", self.on_jump)
+        root.bind("<Up>", self.on_jump)
+        root.bind("<KeyPress-Down>", lambda e: self.set_duck(True))
+        root.bind("<KeyRelease-Down>", lambda e: self.set_duck(False))
+        root.bind("<Escape>", lambda e: root.destroy())
+
+        self.high_score = 0
+        self.reset()
+        self.state = "start"      # start -> running -> over
+        self.loop()
+
+    # ------------------------------------------------------------ game state ---
+    def reset(self):
+        self.dino_x = 60
+        self.dino_y = GROUND_Y     # y of the dino's feet
+        self.vel_y = 0.0
+        self.ducking = False
+        self.speed = START_SPEED
+        self.score = 0.0
+        self.obstacles = []        # dicts: x, y, w, h, kind
+        self.next_spawn = 60
+        self.clouds = [[random.randint(0, WIDTH), random.randint(30, 120)]
+                       for _ in range(4)]
+        self.ground_offset = 0
+        self.frame = 0
+
+    def on_jump(self, _event=None):
+        if self.state in ("start", "over"):
+            self.reset()
+            self.state = "running"
+        elif self.on_ground():
+            self.vel_y = JUMP_SPEED
+
+    def set_duck(self, value):
+        self.ducking = value
+
+    def on_ground(self):
+        return self.dino_y >= GROUND_Y
+
+    # ------------------------------------------------------------- geometry ---
+    def dino_box(self):
+        """Hitbox (x1, y1, x2, y2), slightly smaller than the drawing."""
+        if self.ducking and self.on_ground():
+            return (self.dino_x + 4, self.dino_y - 26, self.dino_x + 54, self.dino_y)
+        return (self.dino_x + 6, self.dino_y - 44, self.dino_x + 36, self.dino_y)
+
+    @staticmethod
+    def overlap(a, b):
+        return a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]
+
+    def spawn_obstacle(self):
+        if self.score > 300 and random.random() < 0.25:
+            # flying bird at one of three heights
+            y = GROUND_Y - random.choice([20, 50, 80])
+            self.obstacles.append(dict(x=WIDTH, y=y, w=42, h=26, kind="bird"))
+        else:
+            count = random.choice([1, 1, 1, 2, 3])
+            tall = random.random() < 0.5
+            w, h = (18, 46) if tall else (14, 32)
+            for i in range(count):
+                self.obstacles.append(dict(x=WIDTH + i * (w + 4), y=GROUND_Y,
+                                           w=w, h=h, kind="cactus"))
+        # gap until the next obstacle grows a bit with speed
+        self.next_spawn = random.randint(55, 110) + int(self.speed)
+
+    # --------------------------------------------------------------- update ---
+    def update(self):
+        self.frame += 1
+        self.speed = min(self.speed + SPEED_GAIN, MAX_SPEED)
+        self.score += self.speed * 0.02
+
+        # dino physics
+        gravity = GRAVITY * (2.5 if self.ducking and not self.on_ground() else 1)
+        self.vel_y += gravity
+        self.dino_y += self.vel_y
+        if self.dino_y >= GROUND_Y:
+            self.dino_y, self.vel_y = GROUND_Y, 0.0
+
+        # obstacles
+        self.next_spawn -= 1
+        if self.next_spawn <= 0:
+            self.spawn_obstacle()
+        for ob in self.obstacles:
+            ob["x"] -= self.speed * (1.1 if ob["kind"] == "bird" else 1.0)
+        self.obstacles = [ob for ob in self.obstacles if ob["x"] + ob["w"] > 0]
+
+        # collisions
+        box = self.dino_box()
+        for ob in self.obstacles:
+            ob_box = (ob["x"] + 2, ob["y"] - ob["h"] + 2,
+                      ob["x"] + ob["w"] - 2, ob["y"])
+            if self.overlap(box, ob_box):
+                self.state = "over"
+                self.high_score = max(self.high_score, int(self.score))
+
+        # background
+        for c in self.clouds:
+            c[0] -= self.speed * 0.2
+            if c[0] < -60:
+                c[0], c[1] = WIDTH + random.randint(0, 200), random.randint(30, 120)
+        self.ground_offset = (self.ground_offset + self.speed) % 40
+
+    # ----------------------------------------------------------------- draw ---
+    def draw_dino(self):
+        cv, x, y = self.canvas, self.dino_x, self.dino_y
+        legs_up = (self.frame // 6) % 2 == 0 and self.on_ground() \
+            and self.state == "running"
+        if self.ducking and self.on_ground():
+            cv.create_rectangle(x, y - 26, x + 46, y - 8, fill=FG, width=0)    # body
+            cv.create_rectangle(x + 40, y - 30, x + 60, y - 14, fill=FG, width=0)  # head
+            cv.create_rectangle(x + 50, y - 26, x + 53, y - 23, fill=BG, width=0)  # eye
+        else:
+            cv.create_rectangle(x + 4, y - 34, x + 30, y - 12, fill=FG, width=0)   # body
+            cv.create_rectangle(x + 20, y - 50, x + 44, y - 32, fill=FG, width=0)  # head
+            cv.create_rectangle(x + 26, y - 46, x + 30, y - 42, fill=BG, width=0)  # eye
+            cv.create_rectangle(x + 30, y - 28, x + 36, y - 24, fill=FG, width=0)  # arm
+            cv.create_rectangle(x - 6, y - 30, x + 6, y - 22, fill=FG, width=0)    # tail
+        # legs (alternate while running)
+        l1 = 0 if legs_up else 6
+        l2 = 6 if legs_up else 0
+        cv.create_rectangle(x + 8, y - 12, x + 13, y - l1, fill=FG, width=0)
+        cv.create_rectangle(x + 20, y - 12, x + 25, y - l2, fill=FG, width=0)
+
+    def draw_obstacle(self, ob):
+        cv = self.canvas
+        x, y, w, h = ob["x"], ob["y"], ob["w"], ob["h"]
+        if ob["kind"] == "cactus":
+            cv.create_rectangle(x + w * 0.3, y - h, x + w * 0.7, y, fill=FG, width=0)
+            cv.create_rectangle(x, y - h * 0.65, x + w * 0.3, y - h * 0.45,
+                                fill=FG, width=0)
+            cv.create_rectangle(x, y - h * 0.85, x + w * 0.15, y - h * 0.5,
+                                fill=FG, width=0)
+            cv.create_rectangle(x + w * 0.7, y - h * 0.55, x + w, y - h * 0.35,
+                                fill=FG, width=0)
+            cv.create_rectangle(x + w * 0.85, y - h * 0.75, x + w, y - h * 0.4,
+                                fill=FG, width=0)
+        else:  # bird, flapping wings
+            cv.create_rectangle(x + 8, y - 16, x + 36, y - 8, fill=FG, width=0)
+            cv.create_polygon(x, y - 14, x + 10, y - 18, x + 10, y - 10, fill=FG)
+            if (self.frame // 10) % 2:
+                cv.create_polygon(x + 16, y - 16, x + 28, y - 16, x + 22, y - h,
+                                  fill=FG)
+            else:
+                cv.create_polygon(x + 16, y - 8, x + 28, y - 8, x + 22, y,
+                                  fill=FG)
+
+    def draw(self):
+        cv = self.canvas
+        cv.delete("all")
+        for cx, cy in self.clouds:
+            cv.create_oval(cx, cy, cx + 50, cy + 16, fill="#e0e0e0", width=0)
+        cv.create_line(0, GROUND_Y, WIDTH, GROUND_Y, fill=FG, width=2)
+        for gx in range(-int(self.ground_offset), WIDTH, 40):
+            cv.create_line(gx, GROUND_Y + 8, gx + 6, GROUND_Y + 8, fill=FG)
+        for ob in self.obstacles:
+            self.draw_obstacle(ob)
+        self.draw_dino()
+
+        cv.create_text(WIDTH - 20, 20, anchor="ne", fill=FG,
+                       font=("Courier", 16, "bold"),
+                       text=f"HI {self.high_score:05d}  {int(self.score):05d}")
+        if self.state == "start":
+            cv.create_text(WIDTH / 2, HEIGHT / 2 - 30, fill=FG,
+                           font=("Courier", 18, "bold"),
+                           text="Press SPACE to start")
+        elif self.state == "over":
+            cv.create_text(WIDTH / 2, HEIGHT / 2 - 40, fill=FG,
+                           font=("Courier", 24, "bold"), text="G A M E   O V E R")
+            cv.create_text(WIDTH / 2, HEIGHT / 2 - 5, fill=FG,
+                           font=("Courier", 14), text="Press SPACE to restart")
+
+    # ----------------------------------------------------------------- loop ---
+    def loop(self):
+        if self.state == "running":
+            self.update()
+        self.draw()
+        self.root.after(int(1000 / FPS), self.loop)
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    DinoGame(root)
+    root.mainloop()

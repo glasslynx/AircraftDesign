@@ -36,15 +36,22 @@ def wingboxdimension(zref_frontspar, zref_rearspar, h_frontspar, h_rearspar):
 def zpositionUPstringers(xref_frontspar, xref_rearspar, wingbox_zref_dimension, xref_stringer): #function to calculate the z-position of the stringers from their known x-position
   zref_r_up = wingbox_zref_dimension[2]
   zref_f_up = wingbox_zref_dimension[0]
-  zref_Up_stringer = zref_f_up + (zref_r_up - zref_f_up)/(xref_rearspar-xref_frontspar)*(xref_stringer-xref_frontspar)
+  zref_Up_stringer = []
+  for i in range(len(xref_stringer)):
+    a = zref_f_up + (zref_r_up - zref_f_up)/(xref_rearspar-xref_frontspar)*(xref_stringer[i]-xref_frontspar)
+    zref_Up_stringer.append(a)
   return(zref_Up_stringer)
 
 
 def zpositionLOWstringers(xref_frontspar, xref_rearspar, wingbox_zref_dimension, xref_stringer): #function to calculate the z-position of the stringers from their known x-position
   zref_r_low = wingbox_zref_dimension[3]
   zref_f_low = wingbox_zref_dimension[1]
-  zref_Low_stringer = zref_f_low + (zref_r_low - zref_f_low)/(xref_rearspar-xref_frontspar)*(xref_stringer-xref_frontspar)
+  zref_Low_stringer = []
+  for i in range(len(xref_stringer)):
+    a = zref_f_low + (zref_r_low - zref_f_low)/(xref_rearspar-xref_frontspar)*(xref_stringer[i]-xref_frontspar)
+    zref_Low_stringer.append(a)
   return(zref_Low_stringer)
+
 
 wingbox_zref_dimension = wingboxdimension(zref_frontspar, zref_rearspar, h_frontspar, h_rearspar)
 print(wingbox_zref_dimension)

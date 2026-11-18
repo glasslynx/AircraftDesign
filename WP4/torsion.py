@@ -2,7 +2,7 @@
 import numpy as np
 from scipy import integrate
 from scipy.interpolate import interp1d
-from geometry_and_bending import corners
+from Geometry_and_Bending import corners
 
 #Shear Modulus
 G = 28e9 #[Pa]

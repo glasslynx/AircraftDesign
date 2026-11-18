@@ -22,7 +22,7 @@ xref_frontspar = 0.2*c
 zref_frontspar =
 xref_rearspar = 0.7*c
 zref_rearspar = 
-stringer_area =
+A_stringer =
 xref_up_stringer = []
 xref_low_stringer = []
 #all functions needed
@@ -78,8 +78,9 @@ Length_Skin = lengthSkingWingbox(wingbox_zref_dimension, xref_frontspar, xref_re
 A_up_skin = t_upskin * Length_Skin[0]
 A_low_skin = t_lowskin * Length_Skin[1]
 
-#total surface
-A_total = A_up_skin + A_low_skin + A_f_spar + A_r_spar + 
+#total surface area
+A_total = A_up_skin + A_low_skin + A_f_spar + A_r_spar + len(xref_up_stringer)*A_stringer + len(xref_low_stringer)*A_stringer
+
 
 
 

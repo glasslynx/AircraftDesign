@@ -44,7 +44,7 @@ DAY_LENGTH = 400               # distance points between day and night
 BOOST_TIME = 330               # frames a UFO boost lasts (5.5 s)
 BOSS_EVERY = 2000              # a boss fight every 2000 points
 SOUND = True                   # system "bell" on new level / record
-VERSION = "v20"
+VERSION = "v22"
 SAVE_FILE = Path(__file__).resolve().parent / "dino_save.json"
 MUSIC_FILE = Path(__file__).resolve().parent / "dino_motivation_music_v3.wav"
 VOICE_DIR = Path(__file__).resolve().parent / "dino_voice_cache"
@@ -80,13 +80,14 @@ LANDS = {
 
 # shop: id, name, description, price (list = price per level), kind, max
 SHOP = [
-    ("shield", "Shield", "survive one hit (used automatically)", 30, "stack", 3),
-    ("slowmo", "Slow-mo", "press X: world at half speed for 4 s", 25, "stack", 3),
-    ("doublejump", "Double jump", "jump again once in mid-air", 120, "perm", 1),
-    ("magnet", "Coin magnet", "pulls nearby coins to you (3 levels)", [60, 120, 240],
+    ("shield", "Shield", "survive one hit (used automatically, max 3)", 60, "stack", 3),
+    ("slowmo", "Slow-mo", "press X: world at half speed for 4 s (max 3)", 40, "stack", 3),
+    ("doublejump", "Double jump", "a small extra jump in mid-air, recharges in 3 s",
+     500, "perm", 1),
+    ("magnet", "Coin magnet", "pulls nearby coins to you (3 levels)", [100, 220, 400],
      "level", 3),
-    ("coinx2", "Double coins", "every coin is worth 2", 200, "perm", 1),
-    ("ufo_luck", "UFO radar", "the UFO visits twice as often", 150, "perm", 1),
+    ("coinx2", "Double coins", "every coin you pick up is worth 2", 600, "perm", 1),
+    ("ufo_luck", "UFO radar", "the UFO visits twice as often", 300, "perm", 1),
     ("trophy", "Golden Trophy", "the ultimate flex: shines on your main menu forever",
      9999, "perm", 1),
     ("land_desert", "World: Desert", "the classic dunes", 0, "land", 1),
@@ -1214,6 +1215,7 @@ class DinoGame:
         self.ducking = False
         self.duck_held = False
         self.air_jumps = 0
+        self.dj_cool = 0
         self.speed = START_SPEED
         self.distance = 0.0
         self.bonus = 0
@@ -1551,9 +1553,10 @@ class DinoGame:
                 self.save["stat_jumps"] += 1
                 self.air_jumps = self.save["doublejump"]
                 self.dust(self.dino_x + 15, GROUND_Y, 6)
-            elif self.air_jumps > 0:
+            elif self.air_jumps > 0 and getattr(self, "dj_cool", 0) <= 0:
                 self.air_jumps -= 1
-                self.vel_y = jump * 0.85
+                self.dj_cool = 180                    # 3 s before it works again
+                self.vel_y = min(self.vel_y, jump * 0.62)   # a smaller hop than before
                 self.burst(self.dino_x + 18, self.dino_y, 8, ["#ffffff", "#bbbbbb"],
                            speed=3, life=15)
 
@@ -1919,11 +1922,16 @@ class DinoGame:
     def start_boss(self):
         n = self.bosses_beaten + 1
         name, color = BOSSES[(n - 1) % len(BOSSES)]
+        worm = random.random() < 1 / 3              # 1 in 3: the sandworm instead
+        if worm:
+            name, color = "SANDWORM", "#c49a6c"
         hp = 3 + n
         self.boss = dict(name=name, color=color, n=n, hp=hp, maxhp=hp,
                          x=WIDTH + 120, y=95, t=0, phase="warning", warn=300,
                          attack=120, dying=0, hit=0, queue=[], since_star=0,
-                         special_done=False, rage=0)
+                         special_done=False, rage=0, worm=worm, rise=0.0)
+        if worm:
+            self.boss.update(x=770, y=GROUND_Y + 40)
         self.event = None
         self.banner = None
         self.beep()
@@ -1937,17 +1945,69 @@ class DinoGame:
                           target_y=self.LANES[lane], lane=lane)
         self.burst(b["x"] - 85, b["y"] + 5, 10, ["#ff9f1a", "#ff5c5c"], speed=3, life=15)
 
-    SPECIALS = {"MECHA-PTERO": "ROCKET BARRAGE", "CACTUS KING": "CACTUS STAMPEDE",
+    SPECIALS = {"SANDWORM": "EARTHQUAKE",
+                "MECHA-PTERO": "ROCKET BARRAGE", "CACTUS KING": "CACTUS STAMPEDE",
                 "STORM DRAGON": "THUNDERSTORM", "LAVA BAT": "LAVA RAIN"}
+
+    # ---------------------------------------------------------- sandworm ---
+    WORM_LANES = {"mid": GROUND_Y - 50,   # body at head height: DUCK
+                  "high": GROUND_Y - 82}  # body up high: STAY ON THE GROUND
+
+    def add_hump(self, b):
+        """The worm's body breaks out of the sand as a low arch: jump over it."""
+        x = b["x"] - 70
+        self.add_obstacle("wormhump", x, GROUND_Y, 96, 34)
+        self.burst(x + 10, GROUND_Y, 14, ["#c49a6c", "#e3c497", "#8a5a36"], speed=4,
+                   life=25)
+
+    def add_lunge(self, b, lane):
+        """The worm shoots its body straight across the track at one height."""
+        end = b["x"] - 25
+        self.add_obstacle("wormneck", end, self.WORM_LANES[lane] + 13, 0, 26,
+                          lane=lane, ly=self.WORM_LANES[lane], head=end, end=end,
+                          stage="wind", t=0)
+        b["neck_y"] = self.WORM_LANES[lane]
+
+    def worm_attack(self, b):
+        n = b["n"]
+        if any(o["kind"] == "wormneck" for o in self.obstacles):
+            b["attack"] = 15                          # never two things at once
+            return
+        if b["since_star"] >= 3 or random.random() < 0.3:
+            self.add_star(b)
+            return
+        b["since_star"] += 1
+        options = ["hump", "hump", "mid", "high", "mid"]
+        if n >= 2:
+            options += ["double", "mid"]
+        if n >= 3:
+            options += ["high", "double"]
+        pick = random.choice(options)
+        if pick == "hump":
+            self.add_hump(b)
+        elif pick == "double":                        # two humps in a row
+            b["queue"] = [[0, "hump", None], [max(42, 55 - 3 * n), "hump", None]]
+        elif any(o["kind"] == "wormhump" for o in self.obstacles):
+            self.add_hump(b)                          # no lunge while humps are coming
+        else:
+            self.add_lunge(b, pick)
+            b["attack"] = 175                         # wait until the body is back
 
     def add_star(self, b):
         """The boss spits out a star: grab it to shoot back."""
+        if b.get("worm"):
+            self.sparks.append(dict(x=b["x"] - 40, y=b["y"] + 10, vy=0.0, t=0, shot=True))
+            b["since_star"] = 0
+            return
         self.sparks.append(dict(x=b["x"] - 95, y=b["y"] + 10, vy=0.0, t=0, shot=True))
         b["since_star"] = 0
 
     def boss_attack(self, b):
         n = b["n"]
         # sometimes the boss shoots a star instead (always after 3 real attacks)
+        if b.get("worm"):
+            self.worm_attack(b)
+            return
         if b["since_star"] >= 3 or random.random() < 0.3:
             self.add_star(b)
             return
@@ -1995,6 +2055,16 @@ class DinoGame:
             for i in range(4):
                 q.append([d + i * 70, "bolt", None])
             d += 4 * 70
+        elif name == "EARTHQUAKE":
+            self.shake = max(self.shake, 40)
+            for i in range(3):
+                q.append([d + i * 48, "hump", None])
+            q.append([d + 3 * 48 + 50, "lunge", "mid"])
+            d += 3 * 48 + 50 + 175
+            q.append([d, "hump", None])
+            q.append([d + 50, "hump", None])
+            q.append([d + 150, "lunge", "high"])
+            d += 150 + 175
         else:                                         # LAVA RAIN
             for i in range(5):
                 q.append([d + i * 48, "meteor", None])
@@ -2015,6 +2085,10 @@ class DinoGame:
             self.add_meteor(random.uniform(250, 560))
         elif kind == "star":
             self.add_star(b)
+        elif kind == "hump":
+            self.add_hump(b)
+        elif kind == "lunge":
+            self.add_lunge(b, arg)
 
     def update_boss(self, v, ws, box):
         b = self.boss
@@ -2071,14 +2145,24 @@ class DinoGame:
             if b["warn"] in (180, 120, 60):
                 self.beep()
             if b["warn"] <= 0:
-                b["phase"] = "enter"
+                if b.get("worm"):                     # the world stops, the ground shakes
+                    b["phase"], b["timer"] = "rumble", 80
+                    self.obstacles = []
+                else:
+                    b["phase"] = "enter"
         elif b["phase"] == "enter":
             b["x"] -= 3
             b["y"] = 95
             if b["x"] <= 720:
                 b["phase"] = "fight"
         elif b["phase"] == "fight":
-            b["y"] = 95 + 35 * math.sin(b["t"] * 0.03)
+            if b.get("worm"):
+                if not any(o["kind"] == "wormneck" for o in self.obstacles):
+                    b["neck_y"] = None
+                target = b.get("neck_y") or (118 + 22 * math.sin(b["t"] * 0.035))
+                b["y"] += (target - b["y"]) * 0.12
+            else:
+                b["y"] = 95 + 35 * math.sin(b["t"] * 0.03)
             b["rage"] = max(0, b["rage"] - 1)
             for q in b["queue"]:                      # queued shots
                 q[0] -= ws
@@ -2093,7 +2177,7 @@ class DinoGame:
                     b["attack"] += len(b["queue"]) * 60
         else:                                          # dying: explosions, then reward
             b["dying"] -= 1
-            b["y"] += 1.5
+            b["y"] += 2.2 if b.get("worm") else 1.5     # the worm sinks into the sand
             if b["dying"] % 6 == 0:
                 self.burst(b["x"] + random.uniform(-50, 30), b["y"] + random.uniform(-20, 20),
                            12, ["#ff9f1a", "#ffd23f", "#ff5c5c", "#8a8a8a"], speed=5,
@@ -2122,8 +2206,41 @@ class DinoGame:
                 self.next_event = max(self.next_event, 500)
 
     # --------------------------------------------------------------- update ---
+    def update_worm_entry(self, b):
+        """The game stands still while the sandworm breaks out of the ground."""
+        if self.dino_y < GROUND_Y or self.vel_y < 0:  # let the dino land
+            self.vel_y += GRAVITY
+            self.dino_y = min(GROUND_Y, self.dino_y + self.vel_y)
+            if self.dino_y >= GROUND_Y:
+                self.vel_y = 0.0
+        b["t"] += 1
+        b["timer"] -= 1
+        self.shake = max(self.shake, 4 if b["phase"] == "rumble" else 7)
+        if self.frame % 4 == 0:                       # sand trickles up everywhere
+            self.add_particle(random.uniform(0, WIDTH), GROUND_Y, random.uniform(-1, 1),
+                              random.uniform(-3, -1), 20, "#c49a6c", 3)
+        if b["phase"] == "rumble":
+            if b["timer"] <= 0:
+                b["phase"], b["timer"] = "emerge", 130
+                self.beep()
+        else:
+            b["rise"] = min(1.0, b["rise"] + 1 / 100)
+            b["y"] = GROUND_Y + 40 - b["rise"] * (GROUND_Y + 40 - 118)
+            if self.frame % 2 == 0:
+                self.burst(b["x"] + random.uniform(-20, 60), GROUND_Y, 3,
+                           ["#c49a6c", "#e3c497", "#8a5a36"], speed=6, life=30)
+            if b["timer"] == 40:
+                self.show_banner("THE SANDWORM AWAKENS!", 90, "#c49a6c")
+            if b["timer"] <= 0:
+                b["phase"] = "fight"
+                b["attack"] = 70
+        self.update_world(0.0)
+
     def update(self):
         self.frame += 1
+        if self.boss and self.boss["phase"] in ("rumble", "emerge"):
+            self.update_worm_entry(self.boss)
+            return
         self.speed = min(self.speed + SPEED_GAIN, MAX_SPEED)
         ws = 0.5 if self.slowmo else 1.0             # world speed factor
         rush = 1.35 if self.event_is("SPEED RUSH") else 1.0
@@ -2132,6 +2249,7 @@ class DinoGame:
                      or self.event_is("SPEED RUSH")) else 1
         self.distance += v * 0.02 * mult
         self.slowmo = max(0, self.slowmo - 1)
+        self.dj_cool = max(0, getattr(self, "dj_cool", 0) - 1)
         self.invuln = max(0, self.invuln - 1)
         if self.boost:
             name, left, color = self.boost
@@ -2175,6 +2293,8 @@ class DinoGame:
             ob_box = self.obstacle_box(ob)
             if ob["kind"] == "bolt" and (ob["warn"] > 0 or ob["active"] <= 0):
                 continue                                # only dangerous while striking
+            if ob["kind"] == "wormneck" and ob["stage"] == "wind":
+                continue                                # still winding up
             if self.overlap(box, ob_box) and not self.invuln:
                 if self.boost_is("STAR POWER"):           # smash through it
                     ob["x"] = -999
@@ -2298,6 +2418,30 @@ class DinoGame:
         elif kind == "fireball":
             ob["x"] -= v + 3
             ob["y"] += (ob["target_y"] - ob["y"]) * 0.14      # dive into its lane
+        elif kind == "wormhump":
+            ob["x"] -= v + 2
+            if self.frame % 5 == 0:
+                self.add_particle(ob["x"] + ob["w"], GROUND_Y, random.uniform(0, 2),
+                                  random.uniform(-3, -1), 18, "#c49a6c", 3)
+        elif kind == "wormneck":                        # body shoots out and back
+            ob["t"] += 1
+            st = ob["stage"]
+            if st == "wind" and ob["t"] >= 45:
+                ob["stage"], ob["t"] = "out", 0
+                self.shake = max(self.shake, 6)
+            elif st == "out":
+                ob["head"] -= 17
+                if ob["head"] <= -70:
+                    ob["stage"], ob["t"] = "hold", 0
+            elif st == "hold" and ob["t"] >= 14:
+                ob["stage"] = "back"
+            elif st == "back":
+                ob["head"] += 17
+                if ob["head"] >= ob["end"]:
+                    ob["x"], ob["w"] = -999, 0
+                    return
+            ob["x"] = ob["head"]
+            ob["w"] = max(0, ob["end"] - ob["head"])
         else:                                           # cactus, rock
             ob["x"] -= v
 
@@ -2793,6 +2937,31 @@ class DinoGame:
                                fill=["#ffcf3f", "#ff9f1a", "#ff7b29", "#ff5c5c"][i],
                                width=0)
             cv.create_oval(x, y - h, x + w, y, fill="#7a5c48", width=0)
+        elif kind == "wormhump":
+            for i in range(8):                          # arched body out of the sand
+                a = math.pi * (i + 0.5) / 8
+                sx = x + w / 2 - (w / 2 - 10) * math.cos(a)
+                sy = GROUND_Y + oy + 4 - (h - 8) * math.sin(a)
+                self.worm_segment(sx, sy, 12, i)
+            cv.create_oval(x - 6, y - 5, x + 20, y + 4, fill="#e3c497", width=0)
+            cv.create_oval(x + w - 20, y - 5, x + w + 6, y + 4, fill="#e3c497", width=0)
+        elif kind == "wormneck":
+            ly = ob["ly"] + oy
+            if ob["stage"] == "wind":                   # telegraph the height
+                on = (ob["t"] // 6) % 2 == 0
+                hint = "DUCK!" if ob["lane"] == "mid" else "STAY DOWN!"
+                cv.create_text(WIDTH / 2, ly, text=f"<<<  {hint}  <<<",
+                               fill="#ff3b3b" if on else "#ff9f9f",
+                               font=("Courier", 14, "bold"))
+            else:
+                head = ob["head"] + ox
+                k = 0
+                xx = ob["end"] + ox
+                while xx > head + 14:                   # the long body
+                    self.worm_segment(xx, ly + 2 * math.sin(xx * 0.05), 13, k)
+                    xx -= 20
+                    k += 1
+                self.worm_head(head, ly, 17, -1)
         elif kind == "fireball":
             cv.create_oval(x + 14, y - h + 3, x + w + 14, y - 3, fill="#ff9f1a", width=0)
             cv.create_oval(x + 26, y - h + 6, x + w + 22, y - 6, fill="#ff5c5c", width=0)
@@ -2844,6 +3013,71 @@ class DinoGame:
             cv.create_text(o["x"], o["y"], text="?", fill="#b366ff",
                            font=("Courier", 14, "bold"))
 
+    def worm_colors(self, flash=False):
+        if flash:
+            return "#ffffff", "#c9c9c9"
+        b = self.boss
+        if b and b.get("rage") and (b["rage"] // 6) % 2:
+            return "#ff6b4a", "#a83218"
+        return "#c49a6c", "#8a5a36"
+
+    def worm_segment(self, x, y, r, i):
+        b = self.boss
+        body, ring = self.worm_colors(bool(b and b["hit"] % 4 >= 2))
+        cv = self.canvas
+        cv.create_oval(x - r, y - r, x + r, y + r, fill=body, outline=ring, width=2)
+        if i % 2 == 0:
+            cv.create_line(x - r * 0.5, y - r * 0.8, x - r * 0.5, y + r * 0.8, fill=ring,
+                           width=2)
+
+    def worm_head(self, x, y, r, face):
+        """Round head with a ring of teeth; face = -1 looks left."""
+        cv = self.canvas
+        b = self.boss
+        body, ring = self.worm_colors(bool(b and b["hit"] % 4 >= 2))
+        cv.create_oval(x - r, y - r, x + r, y + r, fill=body, outline=ring, width=2)
+        mx = x + face * r * 0.5
+        cv.create_oval(mx - r * 0.5, y - r * 0.65, mx + r * 0.5, y + r * 0.65,
+                       fill="#3a1f12", width=0)
+        t = self.frame * 0.1
+        for k in range(6):
+            a = k * math.pi / 3 + t
+            tx, ty = mx + r * 0.45 * math.cos(a), y + r * 0.6 * math.sin(a)
+            cv.create_polygon(tx, ty, tx + (mx - tx) * 0.5 - 2, ty + (y - ty) * 0.5,
+                              tx + (mx - tx) * 0.5 + 2, ty + (y - ty) * 0.5,
+                              fill="#f4ecd8", outline="")
+        cv.create_oval(x - face * r * 0.1 - 3, y - r * 0.9, x - face * r * 0.1 + 3,
+                       y - r * 0.9 + 6, fill="#ff2a2a", width=0)          # little eye
+
+    def draw_worm_boss(self, b, fg):
+        """The big worm: a curved column of body rising out of the sand."""
+        cv = self.canvas
+        hx, hy = b["x"], b["y"]
+        bx, by = b["x"] + 55, GROUND_Y + 30              # where it comes out
+        neck = any(o["kind"] == "wormneck" and o["stage"] != "wind"
+                   for o in self.obstacles)
+        pts = []
+        for i in range(14):                               # quadratic curve base -> head
+            t = i / 13
+            cx, cy = b["x"] + 95, (hy + GROUND_Y) / 2
+            x = (1 - t) ** 2 * bx + 2 * (1 - t) * t * cx + t * t * hx
+            y = (1 - t) ** 2 * by + 2 * (1 - t) * t * cy + t * t * hy
+            x += 4 * math.sin(self.frame * 0.08 + i * 0.6) * t
+            pts.append((x, y, 22 - 6 * t))
+        for i, (x, y, r) in enumerate(pts):
+            if y - r * 0.3 < GROUND_Y:
+                self.worm_segment(x, y, r, i)
+        if not neck and hy < GROUND_Y + 5:
+            self.worm_head(hx, hy, 20, -1)
+        # hide what is still under the ground, then a sand mound around the base
+        cv.create_rectangle(bx - 70, GROUND_Y + 1, bx + 60, HEIGHT, fill=self.col("bg"),
+                            width=0)
+        cv.create_line(bx - 70, GROUND_Y, bx + 60, GROUND_Y, fill=fg, width=2)
+        cv.create_oval(bx - 55, GROUND_Y - 12, bx + 45, GROUND_Y + 10, fill="#e3c497",
+                       width=0)
+        cv.create_oval(bx - 30, GROUND_Y - 18, bx + 20, GROUND_Y + 2, fill="#d9b483",
+                       width=0)
+
     def draw_boss(self, fg):
         cv = self.canvas
         for sp in self.sparks:                          # grab these to shoot
@@ -2885,8 +3119,24 @@ class DinoGame:
             cv.create_text(WIDTH / 2, 140, text=str(secs), fill=fg,
                            font=("Courier", 28, "bold"))
             cv.create_text(WIDTH / 2, 172, fill=fg, font=("Courier", 11),
-                           text="low fireball: JUMP   middle: DUCK   high: STAY DOWN   "
-                                "grab the stars to shoot back")
+                           text=("humps: JUMP   body in the middle: DUCK   body up high: "
+                                 "STAY DOWN   grab the stars" if b.get("worm") else
+                                 "low fireball: JUMP   middle: DUCK   high: STAY DOWN   "
+                                 "grab the stars to shoot back"))
+            return
+        if b["phase"] in ("rumble", "emerge"):        # the worm breaks out
+            if b["phase"] == "emerge":
+                self.draw_worm_boss(b, fg)
+            on = (b["t"] // 10) % 2 == 0
+            cv.create_text(WIDTH / 2, 80, text="THE GROUND IS SHAKING..." if
+                           b["phase"] == "rumble" else "S A N D W O R M",
+                           fill="#c49a6c" if on else "#8a5a36",
+                           font=("Courier", 22, "bold"))
+            return
+        if b.get("worm"):
+            if b["hp"] > 0 or b["phase"] == "dying":
+                self.draw_worm_boss(b, fg)
+            self.draw_boss_bar(b, fg)
             return
         x, y = b["x"], b["y"]
         body = "#ffffff" if b["hit"] % 4 >= 2 else b["color"]
@@ -2907,7 +3157,10 @@ class DinoGame:
                           x + 5, y + 18 + flap / 2, fill=dark, outline=fg)    # front wing
         if b["phase"] == "dying" and (b["dying"] // 4) % 2:
             cv.create_oval(x - 60, y - 40, x + 60, y + 40, outline="#ff9f1a", width=3)
-        # health bar
+        self.draw_boss_bar(b, fg)
+
+    def draw_boss_bar(self, b, fg):
+        cv = self.canvas
         bw = 300
         bx = WIDTH / 2 - bw / 2
         cv.create_text(WIDTH / 2, 108, text=f"BOSS: {b['name']}  (grab the stars to shoot!)",
@@ -3187,6 +3440,9 @@ class DinoGame:
                 info += f"   shield x{self.save['shield']}"
             if self.save["slowmo"]:
                 info += f"   slow-mo x{self.save['slowmo']} [X]"
+            if self.save["doublejump"]:
+                cool = getattr(self, "dj_cool", 0)
+                info += "   2x jump " + ("ready" if cool <= 0 else f"{cool / 60:.1f}s")
             cv.create_text(20, 18, anchor="nw", fill=fg, font=("Courier", 12, "bold"),
                            text=info)
             if self.boost:                              # boost timer bar

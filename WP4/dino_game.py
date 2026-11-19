@@ -44,7 +44,7 @@ DAY_LENGTH = 400               # distance points between day and night
 BOOST_TIME = 330               # frames a UFO boost lasts (5.5 s)
 BOSS_EVERY = 2000              # a boss fight every 2000 points
 SOUND = True                   # system "bell" on new level / record
-VERSION = "v22"
+VERSION = "v24"
 SAVE_FILE = Path(__file__).resolve().parent / "dino_save.json"
 MUSIC_FILE = Path(__file__).resolve().parent / "dino_motivation_music_v3.wav"
 VOICE_DIR = Path(__file__).resolve().parent / "dino_voice_cache"
@@ -76,6 +76,27 @@ LANDS = {
                           "hill": "#d9895c"},
                   "night": {"bg": "#1d0f0f", "fg": "#f0c0a0", "cloud": "#3a1f1a",
                             "hill": "#3d1d14"}},
+    # worlds with a special look: "fx" changes how everything is drawn
+    "land_pixel": {"name": "8-Bit", "decor": "pixel", "fx": "gameboy",
+                   "day": {"bg": "#c4d88a", "fg": "#1e3d1e", "cloud": "#a8c46a",
+                           "hill": "#8fb050"},
+                   "night": {"bg": "#3a5a2a", "fg": "#c4d88a", "cloud": "#2c4a22",
+                             "hill": "#24401c"}},
+    "land_synth": {"name": "Synthwave", "decor": "synth", "fx": None,
+                   "day": {"bg": "#241245", "fg": "#ff4fd8", "cloud": "#3d1f66",
+                           "hill": "#2e1452"},
+                   "night": {"bg": "#0d0221", "fg": "#2de2e6", "cloud": "#1d0b3a",
+                             "hill": "#1a0838"}},
+    "land_noir": {"name": "Film Noir", "decor": "noir", "fx": "noir",
+                  "day": {"bg": "#d6d6d6", "fg": "#1a1a1a", "cloud": "#bcbcbc",
+                          "hill": "#a6a6a6"},
+                  "night": {"bg": "#121212", "fg": "#e6e6e6", "cloud": "#2a2a2a",
+                            "hill": "#262626"}},
+    "land_sketch": {"name": "Sketchbook", "decor": "sketch", "fx": "sketch",
+                    "day": {"bg": "#fbf8ee", "fg": "#2b4a8b", "cloud": "#e2e8f3",
+                            "hill": "#e9edf6"},
+                    "night": {"bg": "#1c2333", "fg": "#cfe0ff", "cloud": "#2a3348",
+                              "hill": "#262f45"}},
 }
 
 # shop: id, name, description, price (list = price per level), kind, max
@@ -94,6 +115,14 @@ SHOP = [
     ("land_forest", "World: Forest", "green hills and pine trees", 80, "land", 1),
     ("land_snow", "World: Snow", "white hills and falling snow", 120, "land", 1),
     ("land_mars", "World: Mars", "red planet, craters, two moons", 200, "land", 1),
+    ("land_pixel", "World: 8-Bit", "chunky pixels in four shades of old handheld green",
+     300, "land", 1),
+    ("land_sketch", "World: Sketchbook", "drawn in pen on lined paper, the lines wobble",
+     300, "land", 1),
+    ("land_noir", "World: Film Noir", "black & white movie with film grain - only red "
+     "stays red", 350, "land", 1),
+    ("land_synth", "World: Synthwave", "neon 80s: striped sunset and a glowing grid",
+     400, "land", 1),
     ("acc_none", "No accessory", "just the dino", 0, "acc", 1),
     ("acc_flag_hu", "Hungarian flag", "carry the red-white-green with pride", 75,
      "acc", 1),
@@ -129,14 +158,17 @@ SHOP = [
     ("skin_ghost", "Skin: Ghost", "spooky and blue", 150, "skin", 1),
     ("skin_gold", "Skin: Gold", "pure flex", 400, "skin", 1),
 ]
-STYLE_KINDS = ("acc", "hair", "eyes", "outfit", "skin", "toggle")
-# two shops: power-ups & worlds, and a wardrobe for the dino's looks
+# two shops: power-ups, and a style shop for everything that only changes the looks.
+# The style shop is split into sections (header shown above each group).
+STYLE_SECTIONS = [("toggle", "COUPLE"), ("hair", "HAIR"), ("eyes", "EYES"),
+                  ("outfit", "OUTFITS"), ("acc", "ACCESSORIES"), ("skin", "SKINS"),
+                  ("land", "WORLDS")]
+STYLE_KINDS = tuple(k for k, _ in STYLE_SECTIONS)
+SECTION_NAME = dict(STYLE_SECTIONS)
 SHOP_POWER = [it for it in SHOP if it[4] not in STYLE_KINDS]
-SHOP_STYLE = ([it for it in SHOP if it[4] == "toggle"] +
-              [it for k in ("hair", "eyes", "outfit", "acc", "skin")
-               for it in SHOP if it[4] == k])
+SHOP_STYLE = [it for k, _ in STYLE_SECTIONS for it in SHOP if it[4] == k]
 SHOPS = {"power": ("P O W E R - U P S", SHOP_POWER),
-         "style": ("D I N O   S T Y L E", SHOP_STYLE)}
+         "style": ("S T Y L E   S H O P", SHOP_STYLE)}
 COSMETIC = ("skin", "land", "acc", "hair", "eyes", "outfit")
 SLOT_LIST = {"skin": "skins", "land": "lands", "acc": "accs", "hair": "hairs",
              "eyes": "eyes_owned", "outfit": "outfits"}
@@ -1112,23 +1144,73 @@ class ScaledCanvas:
     def __init__(self, canvas):
         self.cv = canvas
         self.f, self.ox, self.oy = 1.0, 0.0, 0.0
+        self.fx = None              # None, "gameboy", "noir" or "sketch"
+        self.frame = 0
+        self._cmap = {}
 
-    def resize(self, w, h):
-        self.f = max(0.2, min(w / WIDTH, h / HEIGHT))
-        self.ox = (w - WIDTH * self.f) / 2            # black bars if the shape differs
-        self.oy = (h - HEIGHT * self.f) / 2
+    # ---- colour filters for the special worlds
+    GB = ["#0f380f", "#306230", "#8bac0f", "#c4d88a"]
 
-    def _coords(self, args):
+    def _color(self, c):
+        if not self.fx or not isinstance(c, str) or not c.startswith("#") or len(c) != 7:
+            return c
+        key = (self.fx, c)
+        if key in self._cmap:
+            return self._cmap[key]
+        r, g, b = int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)
+        lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+        if self.fx == "gameboy":
+            out = self.GB[min(3, int(lum * 4))]
+        elif self.fx == "noir":
+            if r > 150 and g < 110 and b < 110:          # only red keeps its colour
+                out = c
+            else:
+                v = int(255 * max(0.0, min(1.0, (lum - 0.5) * 1.35 + 0.5)))
+                out = f"#{v:02x}{v:02x}{v:02x}"
+        else:                                            # sketch: pen on paper
+            ink, paper = (43, 74, 139), (251, 248, 238)
+            t = lum ** 0.8
+            base = [int(ink[k] + (paper[k] - ink[k]) * t) for k in range(3)]
+            out = "#" + "".join(f"{int(base[k] * 0.7 + (r, g, b)[k] * 0.3):02x}"
+                                for k in range(3))
+        self._cmap[key] = out
+        return out
+
+    def configure(self, **kw):
+        if "bg" in kw:
+            kw["bg"] = self._color(kw["bg"])
+        return self.cv.configure(**kw)
+
+    def _game_coords(self, args):
         flat = []
         for a in args:
             if isinstance(a, (list, tuple)):
                 flat.extend(v for p in a for v in (p if isinstance(p, (list, tuple)) else (p,)))
             else:
                 flat.append(a)
+        if self.fx == "gameboy":                          # snap to a chunky pixel grid
+            flat = [round(v / 2) * 2 for v in flat]
+        elif self.fx == "sketch":                         # hand-drawn wobble
+            bucket = self.frame // 7
+            flat = [v + (((int(v * 3) * 73 + i * 151 + bucket * 997) % 17) / 17 - 0.5) * 1.6
+                    for i, v in enumerate(flat)]
+        return flat
+
+    def resize(self, w, h):
+        self.f = max(0.2, min(w / WIDTH, h / HEIGHT))
+        self.ox = (w - WIDTH * self.f) / 2            # black bars if the shape differs
+        self.oy = (h - HEIGHT * self.f) / 2
+
+    def _coords(self, args, raw=False):
+        flat = self._game_coords(args) if not raw else list(args)
         f, ox, oy = self.f, self.ox, self.oy
         return [v * f + (ox if i % 2 == 0 else oy) for i, v in enumerate(flat)]
 
     def _kw(self, kw):
+        if self.fx:
+            for key in ("fill", "outline"):
+                if key in kw:
+                    kw[key] = self._color(kw[key])
         f = self.f
         if f != 1.0:
             if "width" in kw and kw["width"]:
@@ -1140,12 +1222,39 @@ class ScaledCanvas:
         return kw
 
     def create_text(self, *a, **kw):
-        return self.cv.create_text(*self._coords(a), **self._kw(kw))
+        fx = self.fx
+        if fx in ("gameboy", "sketch"):                   # text stays crisp
+            self.fx = None
+            pts = self._coords(a)
+            self.fx = fx
+        else:
+            pts = self._coords(a)
+        return self.cv.create_text(*pts, **self._kw(kw))
 
     def create_rectangle(self, *a, **kw):
         return self.cv.create_rectangle(*self._coords(a), **self._kw(kw))
 
     def create_oval(self, *a, **kw):
+        if self.fx == "gameboy" and kw.get("fill"):       # stepped pixel circle
+            x1, y1, x2, y2 = self._game_coords(a)
+            x1, x2 = min(x1, x2), max(x1, x2)
+            y1, y2 = min(y1, y2), max(y1, y2)
+            cx, cy, rx, ry = (x1 + x2) / 2, (y1 + y2) / 2, (x2 - x1) / 2, (y2 - y1) / 2
+            if rx < 3 or ry < 3:
+                return self.cv.create_rectangle(*self._coords((x1, y1, x2, y2), True),
+                                                fill=self._color(kw["fill"]), width=0)
+            g = 4 if ry < 60 else 8
+            fill = self._color(kw["fill"])
+            y = y1
+            while y < y2:
+                dy = (y + g / 2 - cy) / ry
+                if abs(dy) < 1:
+                    half = round(rx * math.sqrt(1 - dy * dy) / 4) * 4
+                    if half > 0:
+                        self.cv.create_rectangle(*self._coords(
+                            (cx - half, y, cx + half, y + g), True), fill=fill, width=0)
+                y += g
+            return None
         return self.cv.create_oval(*self._coords(a), **self._kw(kw))
 
     def create_polygon(self, *a, **kw):
@@ -1286,7 +1395,7 @@ class DinoGame:
         return self.boost is not None and self.boost[0] == name
 
     # ----------------------------------------------------------------- input ---
-    MENU = ["PLAY", "POWER-UP SHOP", "DINO STYLE", "DINO MINE", "MOTIVATION ROOM",
+    MENU = ["PLAY", "POWER-UP SHOP", "STYLE SHOP", "DINO MINE", "MOTIVATION ROOM",
             "MUSIC", "FULLSCREEN", "QUIT"]
 
     PAUSE_BTN = (WIDTH / 2 - 15, 8, WIDTH / 2 + 15, 36)
@@ -1369,7 +1478,7 @@ class DinoGame:
                 self.reset()
                 self.state = "running"
                 self.audio.play_track(None)
-            elif choice in ("POWER-UP SHOP", "DINO STYLE"):
+            elif choice in ("POWER-UP SHOP", "STYLE SHOP"):
                 self.open_shop("power" if choice == "POWER-UP SHOP" else "style")
             elif choice == "MOTIVATION ROOM":
                 self.enter_motivation()
@@ -1624,11 +1733,16 @@ class DinoGame:
             self.state = "menu"
         elif k in ("space", "return"):
             self.buy(items[self.shop_index])
-        visible = 9
-        if self.shop_index < self.shop_scroll:
-            self.shop_scroll = self.shop_index
-        elif self.shop_index >= self.shop_scroll + visible:
-            self.shop_scroll = self.shop_index - visible + 1
+
+    def shop_rows(self, items):
+        """The list as shown: section headers (style shop) mixed with items."""
+        rows, last = [], None
+        for i, it in enumerate(items):
+            if getattr(self, "shop_tab", "power") == "style" and it[4] != last:
+                rows.append(("header", SECTION_NAME.get(it[4], "")))
+                last = it[4]
+            rows.append(("item", i))
+        return rows
 
     def buy(self, item):
         iid, name, _, _, kind, mx = item
@@ -2580,9 +2694,16 @@ class DinoGame:
             if decor == "craters":                 # Mars has two moons
                 cv.create_oval(WIDTH - 220, 70, WIDTH - 208, 82,
                                fill=mix(bg, "#e0b090", self.night_t), width=0)
-        else:
+        elif decor != "synth":
             sun = "#ff9f6b" if decor == "craters" else "#ffe9a3"
             cv.create_oval(WIDTH - 140, 36, WIDTH - 104, 72, fill=sun, width=0)
+        if decor == "synth":
+            self.draw_synth_sun(WIDTH - 230, GROUND_Y - 25, 85)
+        if decor == "sketch":                             # lined paper with a margin
+            rule = mix(bg, "#7fa7d9", 0.45)
+            for y in range(36, GROUND_Y, 22):
+                cv.create_line(0, y, WIDTH, y, fill=rule, width=1)
+            cv.create_line(48, 0, 48, HEIGHT, fill="#e88b8b", width=2)
         for cx, cy in self.clouds:
             cv.create_oval(cx, cy, cx + 50, cy + 16, fill=self.col("cloud"), width=0)
 
@@ -2591,7 +2712,16 @@ class DinoGame:
         dark = mix(hill, fg, 0.35)
         for hl in self.hills:
             x, w, h = hl["x"], hl["w"], hl["h"]
-            cv.create_oval(x, GROUND_Y - h, x + w, GROUND_Y + h, fill=hill, width=0)
+            if decor == "synth":                          # neon wireframe mountains
+                top = (x + w * 0.5, GROUND_Y - h * 1.5)
+                cv.create_polygon(x, GROUND_Y, *top, x + w, GROUND_Y, fill=hill,
+                                  outline=fg, width=2)
+                cv.create_line(x + w * 0.25, GROUND_Y, *top, fill=mix(hill, fg, 0.5))
+                cv.create_line(x + w * 0.75, GROUND_Y, *top, fill=mix(hill, fg, 0.5))
+                continue
+            cv.create_oval(x, GROUND_Y - h, x + w, GROUND_Y + h, fill=hill,
+                           outline=fg if decor == "sketch" else "",
+                           width=1.5 if decor == "sketch" else 0)
             if decor == "trees":
                 for t in hl["trees"]:
                     tx = x + w * t
@@ -2606,10 +2736,38 @@ class DinoGame:
                 cv.create_oval(x + w * 0.35, GROUND_Y - h, x + w * 0.65,
                                GROUND_Y - h * 0.75, fill="#ffffff", width=0)
         cv.create_rectangle(0, GROUND_Y, WIDTH, HEIGHT, fill=bg, width=0)
+        if decor == "synth":
+            self.draw_synth_grid(0, GROUND_Y, WIDTH, HEIGHT, fg)
         if decor == "snow":
             flake = mix("#9fb3c8", "#ffffff", self.night_t)
             for fx, fy, s in self.snow:
                 cv.create_oval(fx, fy, fx + 2 + s, fy + 2 + s, fill=flake, width=0)
+
+    def draw_synth_sun(self, cx, cy, r):
+        """80s sunset: yellow-to-pink disc with gaps that get wider at the bottom."""
+        cv = self.canvas
+        bands = 22
+        for i in range(bands):
+            y1 = cy - r + 2 * r * i / bands
+            y2 = y1 + 2 * r / bands
+            if i > bands * 0.5 and (i % 3 == 0 or (i > bands * 0.75 and i % 2 == 0)):
+                continue                                  # the stripes
+            dy = (y1 + y2) / 2 - cy
+            half = math.sqrt(max(0.0, r * r - dy * dy))
+            cv.create_rectangle(cx - half, y1, cx + half, y2,
+                                fill=mix("#ffe14d", "#ff2a8a", i / bands), width=0)
+
+    def draw_synth_grid(self, x0, y0, x1, y1, fg):
+        cv = self.canvas
+        col = mix(self.col("bg"), fg, 0.7)
+        vx = (x0 + x1) / 2
+        h = y1 - y0
+        for k in range(-12, 13):                          # lines towards the horizon
+            cv.create_line(vx + k * 18, y0, vx + k * 110, y1, fill=col, width=1)
+        off = (self.ground_offset / 40) if hasattr(self, "ground_offset") else 0
+        for k in range(6):                                # rows rushing towards you
+            t = ((k + off) / 6) ** 2
+            cv.create_line(x0, y0 + h * t, x1, y0 + h * t, fill=col, width=1)
 
     def draw_trophy(self, cx, by, s=1.0):
         """Golden cup with its base at (cx, by)."""
@@ -2881,6 +3039,8 @@ class DinoGame:
     def draw_dino(self, ox, oy, fg, bg):
         x, y = self.dino_x + ox, self.dino_y + oy
         body = SKIN_COLOR.get(self.save["skin"]) or fg
+        if self.world_fx() == "gameboy":
+            body = fg                                 # 4-colour screen: dark sprite
         if self.boost_is("STAR POWER"):
             body = CONFETTI[(self.frame // 4) % len(CONFETTI)]
         if self.invuln and (self.invuln // 4) % 2:
@@ -3169,9 +3329,39 @@ class DinoGame:
         cv.create_rectangle(bx, 118, bx + bw * max(b["hp"], 0) / b["maxhp"], 128,
                             fill="#ff3b3b", width=0)
 
+    def world_fx(self):
+        return LANDS.get(self.save["land"], LANDS["land_desert"]).get("fx")
+
     def draw(self):
+        sc = self.canvas
+        scaled = isinstance(sc, ScaledCanvas)
+        if scaled:
+            sc.frame = self.tick
+            sc.fx = self.world_fx() if self.state in ("menu", "running", "over") else None
         self.draw_scene()
+        if self.state in ("menu", "running", "over"):
+            self.draw_world_overlay()
+        if scaled:
+            sc.fx = None
         self.draw_frame()
+
+    def draw_world_overlay(self):
+        """Extra effects on top of the whole picture for the special worlds."""
+        decor = LANDS.get(self.save["land"], LANDS["land_desert"])["decor"]
+        cv = self.canvas
+        if decor == "noir":                               # film grain, scratches, vignette
+            rnd = random.Random(self.tick // 2)
+            for _ in range(70):
+                x, y = rnd.uniform(0, WIDTH), rnd.uniform(0, HEIGHT)
+                c = "#000000" if rnd.random() < 0.6 else "#ffffff"
+                cv.create_rectangle(x, y, x + 1.5, y + 1.5, fill=c, width=0)
+            if rnd.random() < 0.3:
+                x = rnd.uniform(0, WIDTH)
+                cv.create_line(x, 0, x + rnd.uniform(-6, 6), HEIGHT, fill="#f0f0f0", width=1)
+            for k, c in enumerate(("#000000", "#1a1a1a", "#333333")):
+                cv.create_rectangle(k * 4, k * 4, WIDTH - k * 4, HEIGHT - k * 4,
+                                    outline=c, width=5)
+
 
     # ------------------------------------------- fullscreen decoration ---
     # Pure decoration in the empty bars above and below the game (fullscreen):
@@ -3660,16 +3850,37 @@ class DinoGame:
                                      f"diamonds: {self.save['diamonds']}",
                        fill=self.coin_col(), font=("Courier", 14, "bold"))
         top, row, visible = 70, 20, 9
+        rows = self.shop_rows(items)
+        sel = rows.index(("item", self.shop_index))
+        if sel - 1 >= 0 and rows[sel - 1][0] == "header":
+            sel_top = sel - 1                         # keep its header in view too
+        else:
+            sel_top = sel
+        if sel_top < self.shop_scroll:
+            self.shop_scroll = sel_top
+        elif sel >= self.shop_scroll + visible:
+            self.shop_scroll = sel - visible + 1
+        self.shop_scroll = max(0, min(self.shop_scroll, len(rows) - visible))
         for vi in range(visible):
-            i = self.shop_scroll + vi
-            if i >= len(items):
+            r = self.shop_scroll + vi
+            if r >= len(rows):
                 break
+            y = top + vi * row
+            what, val = rows[r]
+            if what == "header":
+                cv.create_text(30, y + 1, anchor="w", fill=mix(bg, fg, 0.55),
+                               font=("Courier", 10, "bold"), text=f"-- {val} --")
+                cv.create_line(30 + 10 * (len(val) + 6), y + 1, 560, y + 1,
+                               fill=mix(bg, fg, 0.25))
+                continue
+            i = val
             item = items[i]
             iid, name, desc, _, kind, mx = item
-            y = top + vi * row
             if i == self.shop_index:
                 cv.create_rectangle(25, y - 9, 560, y + 10,
                                     fill=mix(bg, "#4db8ff", 0.25), width=0)
+            if getattr(self, "shop_tab", "power") == "style":
+                name = name.split(": ", 1)[-1]        # the header already says "HAIR"
             cv.create_text(40, y, anchor="w", fill=fg, font=("Courier", 12, "bold"),
                            text=name)
             cv.create_text(410, y, anchor="e", fill=self.coin_col(),
@@ -3678,7 +3889,7 @@ class DinoGame:
                            text=self.item_status(item))
         if self.shop_scroll > 0:
             cv.create_text(15, top, text="^", fill=fg, font=("Courier", 12, "bold"))
-        if self.shop_scroll + visible < len(items):
+        if self.shop_scroll + visible < len(rows):
             cv.create_text(15, top + (visible - 1) * row, text="v", fill=fg,
                            font=("Courier", 12, "bold"))
         self.draw_preview(items[self.shop_index], bg, fg)
@@ -3788,17 +3999,45 @@ class DinoGame:
                        text=f"{self.price_text(item)}   {self.item_status(item)}")
 
     def draw_land_preview(self, iid, x0, y0, x1, y1):
+        sc = self.canvas
+        if isinstance(sc, ScaledCanvas):
+            sc.fx = LANDS[iid].get("fx")
+        try:
+            self._draw_land_preview(iid, x0, y0, x1, y1)
+        finally:
+            if isinstance(sc, ScaledCanvas):
+                sc.fx = None
+
+    def _draw_land_preview(self, iid, x0, y0, x1, y1):
         cv = self.canvas
         land = LANDS[iid]
         c = land["day"]
         ground = y1 - 8
         cv.create_rectangle(x0, y0, x1, y1, fill=c["bg"], width=0)
+        decor = land["decor"]
+        if decor == "sketch":
+            for y in range(y0 + 14, ground, 16):
+                cv.create_line(x0, y, x1, y, fill=mix(c["bg"], "#7fa7d9", 0.45))
+            cv.create_line(x0 + 22, y0, x0 + 22, y1, fill="#e88b8b", width=2)
+        if decor == "synth":
+            self.draw_synth_sun((x0 + x1) / 2 + 40, ground - 20, 50)
+            for hx, w, h in ((x0 + 5, 120, 40), (x0 + 150, 120, 30)):
+                cv.create_polygon(hx, ground, hx + w / 2, ground - h * 1.5, hx + w, ground,
+                                  fill=c["hill"], outline=c["fg"], width=2)
+            cv.create_line(x0, ground, x1, ground, fill=c["fg"], width=2)
+            return
         sun = "#ff9f6b" if land["decor"] == "craters" else "#ffe9a3"
         cv.create_oval(x1 - 50, y0 + 12, x1 - 22, y0 + 40, fill=sun, width=0)
         cv.create_oval(x0 + 30, y0 + 22, x0 + 80, y0 + 36, fill=c["cloud"], width=0)
+        if decor == "noir":
+            rnd = random.Random(self.tick // 2)
+            for _ in range(25):
+                gx, gy = rnd.uniform(x0, x1), rnd.uniform(y0, y1)
+                cv.create_rectangle(gx, gy, gx + 1.5, gy + 1.5, fill="#000000", width=0)
         dark = mix(c["hill"], c["fg"], 0.35)
-        for hx, w, h in ((x0 - 10, 150, 50), (x0 + 110, 130, 38), (x0 + 200, 110, 55)):
-            cv.create_oval(hx, ground - h, hx + w, ground + h, fill=c["hill"], width=0)
+        for hx, w, h in ((x0, 150, 50), (x0 + 110, 130, 38), (x0 + 185, 110, 55)):
+            cv.create_arc(hx, ground - h, hx + w, ground + h, start=0, extent=180,
+                          style="chord", fill=c["hill"], width=0)   # top half only
             if land["decor"] == "trees":
                 for t in (0.35, 0.6):
                     tx = hx + w * t

@@ -42,9 +42,10 @@ MAX_SPEED = 22.0
 LEVEL_LENGTH = 400             # distance points per level (new obstacles unlock)
 DAY_LENGTH = 400               # distance points between day and night
 BOOST_TIME = 330               # frames a UFO boost lasts (5.5 s)
-BOSS_EVERY = 2000              # a boss fight every 2000 points
+BOSS_SPEEDS = [14, 17.5, 20.5, 22]  # a boss arrives when the run reaches these speeds
+BOSS_AT_MAX = 4500             # at top speed: another boss every 75 s
 SOUND = True                   # system "bell" on new level / record
-VERSION = "v24"
+VERSION = "v31"
 SAVE_FILE = Path(__file__).resolve().parent / "dino_save.json"
 MUSIC_FILE = Path(__file__).resolve().parent / "dino_motivation_music_v3.wav"
 VOICE_DIR = Path(__file__).resolve().parent / "dino_voice_cache"
@@ -1145,6 +1146,7 @@ class ScaledCanvas:
         self.cv = canvas
         self.f, self.ox, self.oy = 1.0, 0.0, 0.0
         self.fx = None              # None, "gameboy", "noir" or "sketch"
+        self.ol = None              # thin outline added to filled shapes (if set)
         self.frame = 0
         self._cmap = {}
 
@@ -1153,6 +1155,8 @@ class ScaledCanvas:
 
     def _color(self, c):
         if not self.fx or not isinstance(c, str) or not c.startswith("#") or len(c) != 7:
+            return c
+        if c == "#062306":                               # the 8-Bit outline green
             return c
         key = (self.fx, c)
         if key in self._cmap:
@@ -1165,11 +1169,11 @@ class ScaledCanvas:
             if r > 150 and g < 110 and b < 110:          # only red keeps its colour
                 out = c
             else:
-                v = int(255 * max(0.0, min(1.0, (lum - 0.5) * 1.35 + 0.5)))
+                v = int(255 * lum ** 1.6)                 # moody: mid-tones darker
                 out = f"#{v:02x}{v:02x}{v:02x}"
         else:                                            # sketch: pen on paper
             ink, paper = (43, 74, 139), (251, 248, 238)
-            t = lum ** 0.8
+            t = lum ** 1.6                               # dark things stay inky
             base = [int(ink[k] + (paper[k] - ink[k]) * t) for k in range(3)]
             out = "#" + "".join(f"{int(base[k] * 0.7 + (r, g, b)[k] * 0.3):02x}"
                                 for k in range(3))
@@ -1206,6 +1210,12 @@ class ScaledCanvas:
         f, ox, oy = self.f, self.ox, self.oy
         return [v * f + (ox if i % 2 == 0 else oy) for i, v in enumerate(flat)]
 
+    def _outlined(self, kw):
+        if self.ol and kw.get("fill") and not kw.get("outline"):
+            kw["outline"] = self.ol
+            kw["width"] = 1.2
+        return kw
+
     def _kw(self, kw):
         if self.fx:
             for key in ("fill", "outline"):
@@ -1232,7 +1242,7 @@ class ScaledCanvas:
         return self.cv.create_text(*pts, **self._kw(kw))
 
     def create_rectangle(self, *a, **kw):
-        return self.cv.create_rectangle(*self._coords(a), **self._kw(kw))
+        return self.cv.create_rectangle(*self._coords(a), **self._kw(self._outlined(kw)))
 
     def create_oval(self, *a, **kw):
         if self.fx == "gameboy" and kw.get("fill"):       # stepped pixel circle
@@ -1255,10 +1265,10 @@ class ScaledCanvas:
                             (cx - half, y, cx + half, y + g), True), fill=fill, width=0)
                 y += g
             return None
-        return self.cv.create_oval(*self._coords(a), **self._kw(kw))
+        return self.cv.create_oval(*self._coords(a), **self._kw(self._outlined(kw)))
 
     def create_polygon(self, *a, **kw):
-        return self.cv.create_polygon(*self._coords(a), **self._kw(kw))
+        return self.cv.create_polygon(*self._coords(a), **self._kw(self._outlined(kw)))
 
     def create_line(self, *a, **kw):
         return self.cv.create_line(*self._coords(a), **self._kw(kw))
@@ -1284,6 +1294,10 @@ class DinoGame:
         root.bind("<F11>", lambda e: self.toggle_fullscreen())
         root.bind("<FocusOut>", lambda e: self.set_pause(True))   # auto-pause
         raw.bind("<Button-1>", self.click)
+        raw.bind("<Motion>", self.hover)
+        raw.bind("<MouseWheel>", lambda e: self.wheel(-1 if e.delta > 0 else 1))
+        raw.bind("<Button-4>", lambda e: self.wheel(-1))        # Linux scroll up
+        raw.bind("<Button-5>", lambda e: self.wheel(1))
         self.paused = False
         root.bind("<KeyPress>", self.key_press)
         root.bind("<KeyRelease>", self.key_release)
@@ -1365,7 +1379,8 @@ class DinoGame:
         # boss fights
         self.boss = None
         self.bosses_beaten = 0
-        self.next_boss = BOSS_EVERY
+        self.next_boss = BOSS_SPEEDS[0]    # speed at which the next boss comes
+        self.max_timer = 0
         self.sparks = []           # pick-ups that let you shoot the boss
         self.shots = []            # your shots flying at the boss
 
@@ -1406,12 +1421,104 @@ class DinoGame:
         self.paused = on
         self.ducking = False
 
-    def click(self, e):
+    # ------------------------------------------------------------ mouse ---
+    def press(self, key):
+        """Act as if a key was pressed (used by the mouse)."""
+        class _K:
+            keysym = key
+        self.key_press(_K())
+
+    def mouse_target(self, e):
+        """What is under the mouse: (kind, index) or None."""
         sc = self.canvas
         gx, gy = (e.x - sc.ox) / sc.f, (e.y - sc.oy) / sc.f
-        x1, y1, x2, y2 = self.PAUSE_BTN
-        if self.state == "running" and x1 <= gx <= x2 and y1 <= gy <= y2:
-            self.set_pause(not self.paused)
+        st = self.state
+        if st == "running":
+            x1, y1, x2, y2 = self.PAUSE_BTN
+            dy = getattr(self, "hud_dy", 0)
+            if x1 <= gx <= x2 and y1 + dy <= gy <= y2 + dy:
+                return ("pause", 0)
+        elif st == "menu":
+            for i in range(len(self.MENU)):
+                if abs(gy - (84 + i * 19)) <= 9.5 and abs(gx - WIDTH / 2) <= 170:
+                    return ("menu", i)
+        elif st == "shop":
+            if abs(gy - 20) <= 14 and 120 <= gx <= 460:
+                return ("tab", 0)
+            if gx < 25 and 60 <= gy <= 85:
+                return ("scroll", -3)
+            if gx < 25 and 220 <= gy <= 245:
+                return ("scroll", 3)
+            if 580 <= gx <= 885 and 58 <= gy <= 270:
+                return ("buy", 0)
+            if 25 <= gx <= 560 and 60 <= gy < 60 + 9 * 20:
+                rows = self.shop_rows(self.shop_items())
+                r = self.shop_scroll + int((gy - 60) // 20)
+                if r < len(rows) and rows[r][0] == "item":
+                    return ("shop", rows[r][1])
+        elif st == "mine":
+            for i in range(len(self.MINE_MENU)):
+                if abs(gy - (82 + i * 30)) <= 12 and 20 <= gx <= 445:
+                    return ("mine", i)
+        return None
+
+    def hover(self, e):
+        t = self.mouse_target(e)
+        if t:
+            kind, i = t
+            if kind == "menu":
+                self.menu_index = i
+            elif kind == "shop":
+                self.shop_index = i
+            elif kind == "mine":
+                self.mine_index = i
+        try:
+            self.canvas.cv.configure(cursor="hand2" if t else "")
+        except Exception:
+            pass
+
+    def wheel(self, step):
+        if self.state == "shop":                     # scroll the list itself
+            self.shop_follow = False
+            self.shop_scroll = max(0, self.shop_scroll + step)
+        elif self.state in ("menu", "mine"):
+            self.press("down" if step > 0 else "up")
+
+    def click(self, e):
+        t = self.mouse_target(e)
+        st = self.state
+        if t:
+            kind, i = t
+            if kind == "pause":
+                self.set_pause(not self.paused)
+            elif kind == "menu":
+                self.menu_index = i
+                self.press("return")
+            elif kind == "tab":
+                self.press("tab")
+            elif kind == "scroll":
+                self.wheel(i)
+            elif kind == "buy":
+                self.press("return")
+            elif kind == "shop":
+                self.shop_index = i
+                self.press("return")
+            elif kind == "mine":
+                self.mine_index = i
+                self.press("return")
+        elif st == "over":
+            self.press("space")                           # click to play again
+        elif st == "motivation":
+            self.press("space")                           # next quote
+        elif st == "running" and getattr(self, "paused", False):
+            self.set_pause(False)
+
+    def go_menu(self):
+        """Back to the menu with a fresh scene, just like when the game starts."""
+        self.reset()
+        self.paused = False
+        self.shake = 0
+        self.state = "menu"
 
     def toggle_fullscreen(self):
         self.fullscreen = not self.fullscreen
@@ -1422,8 +1529,7 @@ class DinoGame:
         st = self.state
         if k == "f11":
             return
-        if k == "escape" and getattr(self, "fullscreen", False) and st in ("menu",
-                                                                           "running", "over"):
+        if k == "escape" and getattr(self, "fullscreen", False) and st in ("menu", "over"):
             self.toggle_fullscreen()                  # Esc leaves fullscreen first
             return
         if st == "shop":
@@ -1434,17 +1540,20 @@ class DinoGame:
             self.menu_key(k)
         elif st == "motivation":
             self.motivation_key(k)
-        elif k == "q":
-            self.quit()
+        elif st == "running" and k == "q":            # Q: quit the run, back to menu
+            self.paused = False
+            self.die()
+            self.shake = 0
+            self.go_menu()
         elif st == "running" and getattr(self, "paused", False):
-            if k in ("p", "space", "return"):
+            if k in ("p", "space", "return", "escape"):
                 self.set_pause(False)
-            elif k in ("m", "escape"):                 # quit to the menu
+            elif k == "m":                             # quit to the menu
                 self.paused = False
                 self.die()
                 self.shake = 0
-                self.state = "menu"
-        elif st == "running" and k == "p":
+                self.go_menu()
+        elif st == "running" and k in ("p", "escape"):  # Esc / P: pause
             self.set_pause(True)
         elif st == "running":
             if k in ("space", "up", "w"):
@@ -1453,17 +1562,13 @@ class DinoGame:
                 self.duck_press()
             elif k == "x":
                 self.use_slowmo()
-            elif k == "escape":                      # give up this run
-                self.die()
-                self.shake = 0
-                self.state = "menu"
         elif st == "over" and not self.shake:
             if k in ("space", "up", "w"):
                 self.on_jump()
             elif k == "b":
                 self.state, self.message = "shop", ""
-            elif k in ("m", "escape"):
-                self.state = "menu"
+            elif k in ("m", "escape", "q"):
+                self.go_menu()
 
     def menu_key(self, k):
         if k in ("up", "w"):
@@ -1543,13 +1648,13 @@ class DinoGame:
         elif k in ("down", "s"):
             self.mine_index = (self.mine_index + 1) % len(self.MINE_MENU)
         elif k in ("escape", "b"):
-            self.state = "menu"
+            self.go_menu()
         elif k == "c":
             self.mine_collect()
         elif k in ("space", "return"):
             item = self.MINE_MENU[self.mine_index]
             if item == "BACK":
-                self.state = "menu"
+                self.go_menu()
             elif item == "COLLECT COINS":
                 self.mine_collect()
             else:
@@ -1618,7 +1723,7 @@ class DinoGame:
             self.audio.install_neural()
         elif k in ("escape", "b", "q"):
             self.audio.stop_voice()
-            self.state = "menu"
+            self.go_menu()
 
     def update_motivation(self):
         self.tick += 1
@@ -1719,6 +1824,7 @@ class DinoGame:
         self.shop_index = self.shop_scroll = 0
 
     def shop_key(self, k):
+        self.shop_follow = True                      # keyboard: keep the choice in view
         items = self.shop_items()
         self.shop_index %= len(items)
         if k in ("up", "w"):
@@ -1730,7 +1836,7 @@ class DinoGame:
                            else "power")
             return
         elif k in ("b", "escape"):
-            self.state = "menu"
+            self.go_menu()
         elif k in ("space", "return"):
             self.buy(items[self.shop_index])
 
@@ -1934,6 +2040,8 @@ class DinoGame:
 
     def start_event(self):
         options = [n for n, (_, _, lvl) in self.EVENTS.items() if self.level >= lvl]
+        if self.night_t > 0.3 or (int(self.distance) // DAY_LENGTH) % 2:
+            options = [n for n in options if n != "ECLIPSE"]     # already dark
         name = random.choice(options)
         frames, subtitle, _ = self.EVENTS[name]
         self.event = (name, frames)
@@ -2314,8 +2422,9 @@ class DinoGame:
                 self.write_save()
                 self.boss = None
                 self.sparks = []
-                self.next_boss = max((self.score // BOSS_EVERY + 1) * BOSS_EVERY,
-                                     self.score + BOSS_EVERY // 2)
+                k = self.bosses_beaten
+                self.next_boss = BOSS_SPEEDS[k] if k < len(BOSS_SPEEDS) else None
+                self.max_timer = 0
                 self.next_spawn = 90
                 self.next_event = max(self.next_event, 500)
 
@@ -2355,7 +2464,8 @@ class DinoGame:
         if self.boss and self.boss["phase"] in ("rumble", "emerge"):
             self.update_worm_entry(self.boss)
             return
-        self.speed = min(self.speed + SPEED_GAIN, MAX_SPEED)
+        if self.boss is None:                         # speed stays put during a boss fight
+            self.speed = min(self.speed + SPEED_GAIN, MAX_SPEED)
         ws = 0.5 if self.slowmo else 1.0             # world speed factor
         rush = 1.35 if self.event_is("SPEED RUSH") else 1.0
         v = self.speed * ws * rush
@@ -2375,8 +2485,14 @@ class DinoGame:
             self.show_banner(f"LEVEL {self.level}")
             self.burst(WIDTH / 2, 80, 25, CONFETTI, speed=5, life=40)
             self.beep()
-        if self.boss is None and self.score >= self.next_boss:
-            self.start_boss()
+        if self.boss is None:
+            if self.next_boss is not None:
+                due = self.speed >= self.next_boss
+            else:                                     # past the last speed step
+                self.max_timer += 1
+                due = self.max_timer >= BOSS_AT_MAX
+            if due:
+                self.start_boss()
 
         # dino physics
         was_in_air = not self.on_ground()
@@ -2897,13 +3013,14 @@ class DinoGame:
         l2 = 6 if legs_up else 0
         light = is_light(body)
         eyec = "#2b2b2b" if light else bg
-        if light:                                    # dark outline around a white dino
-            o = 1.4 / max(s, 0.5)
+        ol = self.object_outline()
+        if ol:                                       # thin outline (Film Noir / 8-Bit)
+            o = 1.3 / max(s, 0.5)
             parts = ([(0, -26, 46, -8), (40, -30, 60, -14)] if ducking else
                      [(4, -34, 30, -12), (20, -50, 44, -32), (30, -28, 36, -24),
                       (-6, -30, 6, -22)]) + [(8, -12, 13, -l1), (20, -12, 25, -l2)]
             for x1, y1, x2, y2 in parts:
-                R(x1 - o, y1 - o, x2 + o, y2 + o, "#3a3a3a")
+                R(x1 - o, y1 - o, x2 + o, y2 + o, ol)
         if ducking:
             R(0, -26, 46, -8, body)
             R(40, -30, 60, -14, body)
@@ -3035,6 +3152,14 @@ class DinoGame:
                 pts.append((x1 + 4 * k, ty + (4 if k % 2 else 1)))
             pts.append((x2, ty - 4))
             P(pts, "#ff8fc8")
+
+    GB_OUTLINE = "#062306"                           # darker than the darkest 8-Bit green
+
+    def object_outline(self):
+        """Colour of the thin outline around the dino and objects, or None."""
+        sc = self.canvas
+        fx = sc.fx if isinstance(sc, ScaledCanvas) else None
+        return {"noir": "#000000", "gameboy": self.GB_OUTLINE}.get(fx)
 
     def draw_dino(self, ox, oy, fg, bg):
         x, y = self.dino_x + ox, self.dino_y + oy
@@ -3344,6 +3469,16 @@ class DinoGame:
         if scaled:
             sc.fx = None
         self.draw_frame()
+        if (scaled and self.bars_visible() and self.state in ("running", "over")
+                and self.dino_y - 60 < 0):             # jumped above the game area:
+            sc.fx = self.world_fx()                    # draw the dino again on top of
+            self.draw_dino(0, 0, self.col("fg"), self.col("bg"))   # the bar
+            sc.fx = None
+        if scaled and self.hud_in_bar():               # HUD at the very top of the screen
+            sc.fx = self.world_fx()
+            self.hud_dy = -sc.oy / sc.f + 6
+            self.draw_top_hud(self.col("fg"), self.hud_dy)
+            sc.fx = None
 
     def draw_world_overlay(self):
         """Extra effects on top of the whole picture for the special worlds."""
@@ -3358,7 +3493,8 @@ class DinoGame:
             if rnd.random() < 0.3:
                 x = rnd.uniform(0, WIDTH)
                 cv.create_line(x, 0, x + rnd.uniform(-6, 6), HEIGHT, fill="#f0f0f0", width=1)
-            for k, c in enumerate(("#000000", "#1a1a1a", "#333333")):
+            for k, c in enumerate(() if self.bars_visible() else
+                                  ("#000000", "#1a1a1a", "#333333")):
                 cv.create_rectangle(k * 4, k * 4, WIDTH - k * 4, HEIGHT - k * 4,
                                     outline=c, width=5)
 
@@ -3398,7 +3534,13 @@ class DinoGame:
             gl["y"] += 0.0015 * math.sin(gl["phase"] * 0.15)
         d["gulls"] = [gl for gl in d["gulls"] if -0.2 < gl["x"] < 1.2]
         w = d["worm"]
+        in_run = self.state in ("running", "over")
+        if w is not None and not in_run:
+            d["worm"] = w = None                         # never in the menu or shops
+            return
         if w is None:
+            if not in_run or getattr(self, "paused", False):
+                return
             d["next_worm"] -= 1
             if d["next_worm"] <= 0:                          # rare: every 40-100 s
                 d["next_worm"] = random.randint(2400, 6000)
@@ -3445,11 +3587,28 @@ class DinoGame:
             return
         cv, f, bar = sc.cv, sc.f, sc.oy
         W = WIDTH * f + 2 * sc.ox
-        bg = self.col("bg")
         bot = bar + HEIGHT * f
+        # each screen gets bars in its own colours
+        if self.state == "mine":
+            top_c = bot_c = "#2b1d14"
+        elif self.state == "motivation":
+            top_c, bot_c = "#0b1020", "#1a0f1f"
+        else:
+            top_c = bot_c = None
+        if top_c:
+            cv.configure(bg=top_c)
+            cv.create_rectangle(0, 0, W, bar, fill=top_c, width=0)
+            cv.create_rectangle(0, bot, W, bot + bar, fill=bot_c, width=0)
+            return
+        world = self.state in ("menu", "running", "over")
+        prev, sc.fx = sc.fx, (self.world_fx() if world else None)
+        bg = sc._color(self.col("bg"))                # same colours as the game area
+        cloud = sc._color(self.col("cloud"))
+        fgc = sc._color(self.col("fg"))
+        sc.fx = prev
+        cv.configure(bg=bg)
         cv.create_rectangle(0, 0, W, bar, fill=bg, width=0)           # hide anything
         cv.create_rectangle(0, bot, W, bot + bar, fill=bg, width=0)   # poking out
-        cloud = self.col("cloud")
 
         def draw_cloud(c):
             cx, cy, k = c[0] * W, c[1] * bar, c[2] * f
@@ -3459,7 +3618,7 @@ class DinoGame:
 
         for c in d["clouds"][::2]:                                    # clouds behind
             draw_cloud(c)
-        gull = mix(bg, self.col("fg"), 0.85)
+        gull = mix(bg, fgc, 0.85)
         for gl in d["gulls"]:                                         # seagulls
             x, y, k = gl["x"] * W, gl["y"] * bar, 7 * f * gl["size"]
             flap = math.sin(gl["phase"])
@@ -3483,7 +3642,7 @@ class DinoGame:
             body, ring = "#c49a6c", "#8a5a36"
             if self.night_t > 0.5:
                 body, ring = "#8f6f4f", "#5e3d22"
-            dots = mix(bg, self.col("fg"), 0.35)
+            dots = mix(bg, fgc, 0.35)
             for k in range(int(W // (14 * f)) + 1):                   # sand surface
                 x = k * 14 * f + (k % 3) * 3 * f
                 jy = surface + (k % 2) * 2 * f + random.uniform(-1.5, 1.5) * f   # rumble
@@ -3571,10 +3730,15 @@ class DinoGame:
             cv.create_oval(c["x"] - r + ox, c["y"] - R + oy, c["x"] + r + ox,
                            c["y"] + R + oy, fill=coin_col, outline=fg,
                            width=2 if c["big"] else 1)
+        outline_objects = isinstance(cv, ScaledCanvas) and self.object_outline()
+        if outline_objects:
+            cv.ol = self.object_outline()            # obstacles, UFO and boss get it too
         for ob in self.obstacles:
             self.draw_obstacle(ob, ox, oy, fg)
         self.draw_ufo(fg)
         self.draw_boss(fg)
+        if outline_objects:
+            cv.ol = None
         self.draw_dino(ox, oy, fg, bg)
 
         for p in self.particles:
@@ -3599,20 +3763,36 @@ class DinoGame:
                        text=f"score {int(self.score)}    level {self.level}    "
                             f"+{self.run_coins} coins")
         cv.create_text(WIDTH / 2, 175, fill=fg, font=("Courier", 12),
-                       text="P / Space / click the button: resume")
+                       text="Esc / P / Space / click: resume")
         cv.create_text(WIDTH / 2, 198, fill=fg, font=("Courier", 12),
-                       text="M / Esc: quit to menu")
+                       text="Q: quit to the menu")
+
+    def hud_in_bar(self):
+        """In fullscreen with enough room, the top row of the HUD sits in the bar
+        at the very top of the screen instead of over the game."""
+        sc = self.canvas
+        return (self.bars_visible() and sc.oy / sc.f >= 80
+                and self.state in ("running", "over", "menu"))
 
     def draw_hud(self, fg):
         cv = self.canvas
-        cv.create_text(WIDTH - 20, 18, anchor="ne", fill=fg,
+        if not self.hud_in_bar():
+            self.hud_dy = 0
+            self.draw_top_hud(fg, 0)
+        self.draw_hud_rest(fg)
+
+    def draw_top_hud(self, fg, dy):
+        """Score, coins, pause button and power-up info (dy shifts it up)."""
+        cv = self.canvas
+        cv.create_text(WIDTH - 20, 18 + dy, anchor="ne", fill=fg,
                        font=("Courier", 16, "bold"),
                        text=f"HI {self.save['high']:05d}  {self.score:05d}")
-        cv.create_text(WIDTH - 20, 42, anchor="ne", fill=self.coin_col(),
+        cv.create_text(WIDTH - 20, 42 + dy, anchor="ne", fill=self.coin_col(),
                        font=("Courier", 13, "bold"),
                        text=f"coins {self.save['coins']}   diamonds {self.save['diamonds']}")
         if self.state == "running":
             x1, y1, x2, y2 = self.PAUSE_BTN                      # pause button
+            y1, y2 = y1 + dy, y2 + dy
             cv.create_rectangle(x1, y1, x2, y2, outline=fg, width=2,
                                 fill=mix(self.col("bg"), fg, 0.08))
             if getattr(self, "paused", False):
@@ -3626,25 +3806,38 @@ class DinoGame:
             info = f"LVL {self.level}"
             if self.combo >= 5:
                 info += f"   combo {self.combo}"
+            cv.create_text(20, 14 + dy, anchor="nw", fill=fg, font=("Courier", 12, "bold"),
+                           text=info)
+            items = []                                  # power-ups on their own line
             if self.save["shield"]:
-                info += f"   shield x{self.save['shield']}"
+                items.append(f"shield x{self.save['shield']}")
             if self.save["slowmo"]:
-                info += f"   slow-mo x{self.save['slowmo']} [X]"
+                items.append(f"slow-mo x{self.save['slowmo']} [X]")
             if self.save["doublejump"]:
                 cool = getattr(self, "dj_cool", 0)
-                info += "   2x jump " + ("ready" if cool <= 0 else f"{cool / 60:.1f}s")
-            cv.create_text(20, 18, anchor="nw", fill=fg, font=("Courier", 12, "bold"),
-                           text=info)
+                items.append("2x jump " + ("ready" if cool <= 0 else f"{cool / 60:.1f}s"))
+            if items:
+                cv.create_text(20, 33 + dy, anchor="nw", fill=fg, font=("Courier", 10),
+                               text="   ".join(items))
             if self.boost:                              # boost timer bar
                 name, left, color = self.boost
-                cv.create_text(20, 40, anchor="nw", fill=color,
+                cv.create_text(20, 50 + dy, anchor="nw", fill=color,
                                font=("Courier", 12, "bold"), text=name)
-                cv.create_rectangle(170, 43, 170 + 120, 53, outline=fg, width=1)
-                cv.create_rectangle(170, 43, 170 + 120 * left / BOOST_TIME, 53,
+                cv.create_rectangle(170, 53 + dy, 170 + 120, 63 + dy, outline=fg, width=1)
+                cv.create_rectangle(170, 53 + dy, 170 + 120 * left / BOOST_TIME, 63 + dy,
                                     fill=color, width=0)
             if self.event and self.event[1] > 1:
-                cv.create_text(20, 62, anchor="nw", fill="#b366ff",
+                cv.create_text(20, 70 + dy, anchor="nw", fill="#b366ff",
                                font=("Courier", 11, "bold"), text=self.event[0])
+
+    def draw_hud_rest(self, fg):
+        cv = self.canvas
+        if (self.state == "running" and not self.bars_visible()
+                and self.dino_y - 50 < 0):
+            ax = self.dino_x + 25
+            cv.create_polygon(ax - 7, 14, ax + 7, 14, ax, 3, fill=fg, outline="")
+            cv.create_text(ax, 22, text=f"{int(50 - self.dino_y)}", fill=fg,
+                           font=("Courier", 8, "bold"))
         if self.banner:
             text, left, color = self.banner
             cv.create_text(WIDTH / 2, 272 if self.state == "menu" else 90, text=text,
@@ -3679,7 +3872,7 @@ class DinoGame:
                 cv.create_text(WIDTH - 130, 232, text="LEGEND", fill="#c79100",
                                font=("Courier", 12, "bold"))
             cv.create_text(WIDTH / 2, 240, fill=fg, font=("Courier", 10),
-                           text="Up/Down + Enter   in game: Space jump, Down duck/dive, "
+                           text="click or arrows + Enter   Space jump   Down duck   "
                                 f"X slow-mo   F11 fullscreen   world: {land}")
         elif self.state == "over":
             cv.create_text(WIDTH / 2, mid - 55, fill=fg, font=("Courier", 24, "bold"),
@@ -3856,10 +4049,11 @@ class DinoGame:
             sel_top = sel - 1                         # keep its header in view too
         else:
             sel_top = sel
-        if sel_top < self.shop_scroll:
-            self.shop_scroll = sel_top
-        elif sel >= self.shop_scroll + visible:
-            self.shop_scroll = sel - visible + 1
+        if getattr(self, "shop_follow", True):
+            if sel_top < self.shop_scroll:
+                self.shop_scroll = sel_top
+            elif sel >= self.shop_scroll + visible:
+                self.shop_scroll = sel - visible + 1
         self.shop_scroll = max(0, min(self.shop_scroll, len(rows) - visible))
         for vi in range(visible):
             r = self.shop_scroll + vi
@@ -3896,7 +4090,7 @@ class DinoGame:
         cv.create_text(290, HEIGHT - 28, fill="#ff5c5c",
                        font=("Courier", 12, "bold"), text=self.message)
         cv.create_text(WIDTH / 2, HEIGHT - 9, fill=fg, font=("Courier", 10),
-                       text="Up/Down: choose   Enter: buy/equip   Tab/Left/Right: other shop   Esc: back")
+                       text="click/Enter: buy or equip   mouse wheel: scroll   click title/Tab: other shop   Esc: back")
         for p in self.particles:
             s = p["size"]
             cv.create_rectangle(p["x"], p["y"], p["x"] + s, p["y"] + s,

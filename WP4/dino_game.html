@@ -1,0 +1,2479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Fo-rex Gump</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #000; }
+  canvas { display: block; touch-action: none; user-select: none; -webkit-user-select: none; outline: none; }
+</style>
+<!-- On CrazyGames or Poki, add their SDK script tag here; the game finds it by itself. -->
+</head>
+<body>
+<canvas id="game" tabindex="0"></canvas>
+<script>
+"use strict";
+// =====================================================================
+//  FO-REX GUMP - a dino runner (web version)
+//  One self-contained page: canvas graphics, Web Audio music, speech.
+// =====================================================================
+const GAME_NAME = "Fo-rex Gump";
+const VERSION = "Fo-rex Gump 1.0";
+const W = 900, H = 300, GROUND = 250;
+const GRAVITY = 0.9, JUMP = -15.5, DIVE = 9;
+const START_SPEED = 8, SPEED_GAIN = 0.0016, MAX_SPEED = 22;
+const LEVEL_LENGTH = 400, DAY_LENGTH = 400, BOOST_TIME = 330;
+const BOSS_SPEEDS = [14, 17.5, 20.5, 22], BOSS_AT_MAX = 4500;
+const MINER_COSTS = [1, 2, 3, 5, 7, 10, 14], PICK_COSTS = [2, 4, 7, 11, 16];
+const CART_COSTS = [1, 3, 6, 10], MINE_MAX_OFFLINE = 12 * 3600;
+const COIN_DAY = "#e6a700", COIN_NIGHT = "#ffd23f";
+const CONFETTI = ["#ff5c5c", "#ffb84d", "#ffe14d", "#5cd65c", "#4db8ff", "#b366ff"];
+
+const LANDS = {
+  land_desert: {name: "Desert", decor: "dunes",
+    day: {bg: "#f7f7f7", fg: "#535353", cloud: "#e0e0e0", hill: "#ece6d8"},
+    night: {bg: "#16181d", fg: "#d7d7d7", cloud: "#2c3038", hill: "#22252c"}},
+  land_forest: {name: "Forest", decor: "trees",
+    day: {bg: "#dcefff", fg: "#2f4a2f", cloud: "#ffffff", hill: "#a6d39a"},
+    night: {bg: "#0e1822", fg: "#cfe8cf", cloud: "#1c2a36", hill: "#173022"}},
+  land_snow: {name: "Snow", decor: "snow",
+    day: {bg: "#e6f1fa", fg: "#3d4a5c", cloud: "#ffffff", hill: "#fbfdff"},
+    night: {bg: "#0f1726", fg: "#dfe8f5", cloud: "#243146", hill: "#2a3850"}},
+  land_mars: {name: "Mars", decor: "craters",
+    day: {bg: "#f2c7a5", fg: "#5a2a1a", cloud: "#e8b08a", hill: "#d9895c"},
+    night: {bg: "#1d0f0f", fg: "#f0c0a0", cloud: "#3a1f1a", hill: "#3d1d14"}},
+  land_pixel: {name: "8-Bit", decor: "pixel", fx: "gameboy",
+    day: {bg: "#c4d88a", fg: "#1e3d1e", cloud: "#a8c46a", hill: "#8fb050"},
+    night: {bg: "#3a5a2a", fg: "#c4d88a", cloud: "#2c4a22", hill: "#24401c"}},
+  land_synth: {name: "Synthwave", decor: "synth", fx: null,
+    day: {bg: "#241245", fg: "#ff4fd8", cloud: "#3d1f66", hill: "#2e1452"},
+    night: {bg: "#0d0221", fg: "#2de2e6", cloud: "#1d0b3a", hill: "#1a0838"}},
+  land_noir: {name: "Film Noir", decor: "noir", fx: "noir",
+    day: {bg: "#d6d6d6", fg: "#1a1a1a", cloud: "#bcbcbc", hill: "#a6a6a6"},
+    night: {bg: "#121212", fg: "#e6e6e6", cloud: "#2a2a2a", hill: "#262626"}},
+  land_sketch: {name: "Sketchbook", decor: "sketch", fx: "sketch",
+    day: {bg: "#fbf8ee", fg: "#2b4a8b", cloud: "#e2e8f3", hill: "#e9edf6"},
+    night: {bg: "#1c2333", fg: "#cfe0ff", cloud: "#2a3348", hill: "#262f45"}},
+  // worlds with their own obstacles, physics and boss ("world")
+  land_deepsea: {name: "Deep Sea", decor: "deepsea", fx: null,
+    day: {bg: "#1d6fa3", fg: "#e8f6ff", cloud: "#5fb3e0", hill: "#c9b27c"},
+    night: {bg: "#0a2a4a", fg: "#cfeaff", cloud: "#1f5a85", hill: "#6e5f3f"},
+    world: {ground: "crab", flyer: "jelly", special: "puffer", grav: 0.82, boss: ["KRAKEN", "#8e44ad"], shot: "ink",
+      attack: "TENTACLE SLAM"}},
+  land_haunted: {name: "Haunted", decor: "haunted", fx: null,
+    day: {bg: "#3b2a4f", fg: "#e9dcff", cloud: "#5a4870", hill: "#2a1f38"},
+    night: {bg: "#150d22", fg: "#d8c8f5", cloud: "#2b2140", hill: "#0f0a18"},
+    world: {ground: "tomb", flyer: "bat", special: "ghost", grav: 1, boss: ["PUMPKIN KING", "#ff7b1a"], shot: "pumpkin",
+      attack: "GRAVEYARD RISE"}},
+  land_moon: {name: "Moon Base", decor: "moon", fx: null,
+    day: {bg: "#0c0f1e", fg: "#e6e9f2", cloud: "#1c2238", hill: "#7d8291"},
+    night: {bg: "#05060d", fg: "#d0d4e0", cloud: "#121728", hill: "#545866"},
+    world: {ground: "moonrock", flyer: "satellite", special: "rover", grav: 0.7, boss: ["ALIEN MOTHERSHIP", "#5cd65c"], shot: "plasma",
+      attack: "ABDUCTION BEAM"}},
+};
+
+// id, name, description, price, kind, max
+const SHOP = [
+  ["shield", "Shield", "survive one hit (used automatically, max 3)", 60, "stack", 3],
+  ["slowmo", "Slow-mo", "press X: world at half speed for 4 s (max 3)", 40, "stack", 3],
+  ["doublejump", "Double jump", "a small extra jump in mid-air, recharges in 3 s", 500, "perm", 1],
+  ["magnet", "Coin magnet", "pulls nearby coins to you (3 levels)", [100, 220, 400], "level", 3],
+  ["coinx2", "Double coins", "every coin you pick up is worth 2", 600, "perm", 1],
+  ["ufo_luck", "UFO radar", "the UFO visits twice as often", 300, "perm", 1],
+  ["revive", "Revive token", "if you crash, you keep running (used automatically, max 1)", 250, "stack", 1],
+  ["headstart", "Head start", "press H in the first 5 s of a run: skip ahead to level 2 (max 3)", 200, "stack", 3],
+  ["lucky", "Lucky charm", "diamonds twice as common and UFO boosts last 50% longer", 450, "perm", 1],
+  ["trophy", "Golden Trophy", "the ultimate flex: shines on your main menu forever", 9999, "perm", 1],
+  ["egg", "Mystery egg", "hatches a random style item you don't own yet (or 200 coins)", 150, "egg", 99],
+  ["couple", "Couple run", "run hand in hand with your dino girlfriend (buy, then click again to turn on/off)", 350, "toggle", 1],
+  ["hair_none", "Hair: Bald", "the classic smooth dino", 0, "hair", 1],
+  ["hair_quiff", "Hair: Blond quiff", "blond-brown and swept up", 60, "hair", 1],
+  ["hair_long", "Hair: Long brown", "long brown hair down the back", 60, "hair", 1],
+  ["hair_ponytail", "Hair: Ginger ponytail", "bounces when you run", 70, "hair", 1],
+  ["hair_curly", "Hair: Black curls", "big curly fro", 80, "hair", 1],
+  ["hair_mohawk", "Hair: Pink mohawk", "punk rock dino", 120, "hair", 1],
+  ["eyes_classic", "Eyes: Classic", "plain dot eyes", 0, "eyes", 1],
+  ["eyes_green", "Eyes: Green", "bright green eyes", 40, "eyes", 1],
+  ["eyes_brown", "Eyes: Dark brown", "deep dark eyes", 40, "eyes", 1],
+  ["eyes_blue", "Eyes: Blue", "ice blue eyes", 40, "eyes", 1],
+  ["outfit_none", "Outfit: None", "nothing to wear", 0, "outfit", 1],
+  ["outfit_scarf", "Outfit: Scarf", "a cosy blue scarf that flaps", 50, "outfit", 1],
+  ["outfit_bowtie", "Outfit: Bow tie", "classy", 60, "outfit", 1],
+  ["outfit_suit", "Outfit: Shirt & tie", "ready for the job interview", 90, "outfit", 1],
+  ["outfit_tutu", "Outfit: Tutu", "pink and fabulous", 90, "outfit", 1],
+  ["outfit_cape", "Outfit: Hero cape", "a red cape that waves behind you", 180, "outfit", 1],
+  ["acc_none", "No accessory", "just the dino", 0, "acc", 1],
+  ["acc_flag_hu", "Hungarian flag", "carry the red-white-green with pride", 75, "acc", 1],
+  ["acc_flag_nl", "Dutch flag", "red, white and blue - hup Holland!", 75, "acc", 1],
+  ["acc_flag_tr", "Turkish flag", "red with the white crescent and star", 75, "acc", 1],
+  ["acc_partyhat", "Party hat", "every run is a party", 40, "acc", 1],
+  ["acc_shades", "Sunglasses", "too cool for cacti", 60, "acc", 1],
+  ["acc_crown", "Crown", "king of the desert", 250, "acc", 1],
+  ["acc_tophat", "Top hat", "very distinguished", 90, "acc", 1],
+  ["acc_cowboy", "Cowboy hat", "yeehaw", 90, "acc", 1],
+  ["acc_headphones", "Headphones", "in the zone", 80, "acc", 1],
+  ["acc_viking", "Viking helmet", "horns included", 120, "acc", 1],
+  ["acc_halo", "Halo", "an angel of a runner", 150, "acc", 1],
+  ["trail_none", "Trail: None", "no trail", 0, "trail", 1],
+  ["trail_bubbles", "Trail: Bubbles", "a stream of bubbles behind you", 100, "trail", 1],
+  ["trail_sparkle", "Trail: Sparkles", "twinkling stars", 120, "trail", 1],
+  ["trail_hearts", "Trail: Hearts", "leave some love behind", 120, "trail", 1],
+  ["trail_rainbow", "Trail: Rainbow", "a full rainbow streak", 150, "trail", 1],
+  ["trail_fire", "Trail: Fire", "burning up the track", 180, "trail", 1],
+  ["pet_none", "Pet: None", "running solo", 0, "pet", 1],
+  ["pet_bird", "Pet: Bird", "a little bird flies along with you", 200, "pet", 1],
+  ["pet_ghost", "Pet: Ghost", "a friendly ghost floats behind you", 220, "pet", 1],
+  ["pet_babyrex", "Pet: Baby Rex", "a tiny dino that hops after you", 250, "pet", 1],
+  ["pet_drone", "Pet: Drone", "a buzzing robot buddy with blinking lights", 300, "pet", 1],
+  ["skin_grey", "Skin: Retro grey", "the standard old-school grey dino", 0, "skin", 1],
+  ["skin_green", "Skin: Green", "a fresh green dino", 50, "skin", 1],
+  ["skin_ghost", "Skin: Ghost", "spooky and blue", 150, "skin", 1],
+  ["skin_gold", "Skin: Gold", "pure flex", 400, "skin", 1],
+  ["skin_robo", "Skin: Robo-Rex", "metal plates, rivets, a glowing red eye and a blinking antenna", 500, "skin", 1],
+  ["skin_galaxy", "Skin: Galaxy Rex", "a body full of twinkling stars and swirling nebula", 600, "skin", 1],
+  ["land_desert", "World: Desert", "the classic dunes", 0, "land", 1],
+  ["land_forest", "World: Forest", "green hills and pine trees", 80, "land", 1],
+  ["land_snow", "World: Snow", "white hills and falling snow", 120, "land", 1],
+  ["land_mars", "World: Mars", "red planet, craters, two moons", 200, "land", 1],
+  ["land_pixel", "World: 8-Bit", "chunky pixels in four shades of old handheld green", 300, "land", 1],
+  ["land_sketch", "World: Sketchbook", "drawn in pen on lined paper, the lines wobble", 300, "land", 1],
+  ["land_noir", "World: Film Noir", "black & white movie with film grain - only red stays red", 350, "land", 1],
+  ["land_synth", "World: Synthwave", "neon 80s: striped sunset and a glowing grid", 400, "land", 1],
+  ["land_deepsea", "World: Deep Sea", "floaty underwater runs: crabs, jellyfish, pufferfish - and the KRAKEN", 450, "land", 1],
+  ["land_haunted", "World: Haunted", "tombstones, bats and ghosts that fade in and out - boss: the PUMPKIN KING", 450, "land", 1],
+  ["land_moon", "World: Moon Base", "low gravity, moon rocks, satellites, rovers - boss: the ALIEN MOTHERSHIP", 500, "land", 1],
+];
+const STYLE_SECTIONS = [["egg", "MYSTERY EGG"], ["toggle", "COUPLE"], ["pet", "PETS"], ["trail", "TRAILS"], ["hair", "HAIR"],
+  ["eyes", "EYES"], ["outfit", "OUTFITS"], ["acc", "HATS & ACCESSORIES"], ["skin", "SKINS"], ["land", "WORLDS"]];
+const STYLE_KINDS = STYLE_SECTIONS.map(s => s[0]);
+const SECTION_NAME = Object.fromEntries(STYLE_SECTIONS);
+const COSMETIC = ["skin", "land", "acc", "hair", "eyes", "outfit", "trail", "pet"];
+const SLOT_LIST = {skin: "skins", land: "lands", acc: "accs", hair: "hairs", eyes: "eyes_owned", outfit: "outfits",
+  trail: "trails", pet: "pets"};
+const SHOP_POWER = SHOP.filter(it => !STYLE_KINDS.includes(it[4]));
+const SHOP_STYLE = STYLE_SECTIONS.flatMap(([k]) => SHOP.filter(it => it[4] === k));
+const SHOPS = {power: ["P O W E R - U P S", SHOP_POWER], style: ["S T Y L E   S H O P", SHOP_STYLE]};
+
+const HAIR = {hair_none: null, hair_quiff: ["quiff", "#b08a4f"], hair_long: ["long", "#6b3e22"],
+  hair_ponytail: ["ponytail", "#d9772b"], hair_curly: ["curly", "#2b1d14"], hair_mohawk: ["mohawk", "#ff4fa3"]};
+const EYES = {eyes_classic: null, eyes_green: "#3c9a4a", eyes_brown: "#3b2010", eyes_blue: "#3a8be0"};
+const HIM = {hair: ["quiff", "#b08a4f"], eyes: "#3c9a4a"};
+const HER = {hair: ["long", "#6b3e22"], eyes: "#2a1408", lashes: true, bow: true};
+const SKIN_COLOR = {skin_grey: null, skin_green: "#3fae49",
+  skin_ghost: "#8fa8ff", skin_gold: "#e0a800", skin_robo: "#9aa3ad", skin_galaxy: "#1b1440"};
+const SKIN_FX = {skin_robo: "robo", skin_galaxy: "galaxy"};   // skins with a pattern, not just a colour
+const BOOSTS = [["STAR POWER", "#ffd23f"], ["SUPER MAGNET", "#ff5c5c"], ["DOUBLE SCORE", "#5cd65c"],
+  ["MOON JUMP", "#b366ff"], ["TINY DINO", "#4db8ff"], ["COIN FRENZY", "#ffb84d"]];
+const FLAGS = {acc_flag_hu: ["#ce2939", "#ffffff", "#477050"], acc_flag_nl: ["#ae1c28", "#ffffff", "#21468b"],
+  acc_flag_tr: ["#e30a17", "#e30a17", "#e30a17"]};
+const BOSSES = [["MECHA-PTERO", "#6b6f7a"], ["CACTUS KING", "#3f8f3f"], ["STORM DRAGON", "#5a4fcf"], ["LAVA BAT", "#c0392b"]];
+const SPECIALS = {"SANDWORM": "EARTHQUAKE", "KRAKEN": "TENTACLE SLAM", "PUMPKIN KING": "GRAVEYARD RISE",
+  "ALIEN MOTHERSHIP": "ABDUCTION BEAM", "MECHA-PTERO": "ROCKET BARRAGE", "CACTUS KING": "CACTUS STAMPEDE",
+  "STORM DRAGON": "THUNDERSTORM", "LAVA BAT": "LAVA RAIN"};
+const LANES = {low: GROUND - 4, mid: GROUND - 38, high: GROUND - 72};
+const WORM_LANES = {mid: GROUND - 50, high: GROUND - 82};
+// name: [frames, banner text, first level]
+const EVENTS = {
+  "COIN RAIN": [300, "grab them!", 1], "TREASURE": [1, "big coin ahead (+10)", 1],
+  "DIAMOND": [1, "a diamond is coming!", 2], "BONUS ZONE": [360, "double points!", 1],
+  "ECLIPSE": [500, "lights out...", 1], "LOW GRAVITY": [420, "floaty jumps", 2],
+  "BIRD FLOCK": [1, "here they come", 2], "SPEED RUSH": [300, "faster, double points", 3],
+  "CACTUS PARADE": [1, "jump jump jump", 3], "METEOR SHOWER": [360, "watch the sky!", 4],
+  "LIGHTNING STORM": [380, "jump when it strikes!", 3],
+};
+const QUOTES = [
+  ["The impediment to action advances action. What stands in the way becomes the way.", "Marcus Aurelius, Meditations"],
+  ["Waste no more time arguing about what a good man should be. Be one.", "Marcus Aurelius, Meditations"],
+  ["Confine yourself to the present.", "Marcus Aurelius, Meditations"],
+  ["Impossible is a word to be found only in the dictionary of fools.", "Napoleon Bonaparte (attributed)"],
+  ["Victory belongs to the most persevering.", "Napoleon Bonaparte (attributed)"],
+  ["Never give in, never give in, never, never, never, never.", "Winston Churchill, 1941"],
+  ["Opportunities multiply as they are seized.", "Sun Tzu, The Art of War"],
+  ["I will either find a way, or make one.", "Hannibal Barca (attributed)"],
+  ["I came, I saw, I conquered.", "Julius Caesar"],
+  ["There is nothing impossible to him who will try.", "Alexander the Great (attributed)"],
+  ["Difficulties strengthen the mind, as labour does the body.", "Seneca"],
+  ["No man is free who is not master of himself.", "Epictetus"],
+];
+const AFFIRMATIONS = ["Every run makes you better.", "The cactus is temporary. Your high score is forever.",
+  "You have survived every bad run so far.", "Losing is just practice wearing a disguise.",
+  "Your thumbs are faster than you think.", "Breathe. Focus. Jump.",
+  "Champions are made of runs that went wrong.", "The boss fears you more than you fear the boss."];
+const MENU = ["PLAY", "POWER-UP SHOP", "STYLE SHOP", "DINO MINE", "MOTIVATION ROOM", "MUSIC", "FULLSCREEN"];
+const MINE_MENU = ["COLLECT COINS", "HIRE MINER", "BETTER PICKAXE", "BIGGER CART", "BACK"];
+
+// ---------------------------------------------------------------- helpers
+const rand = (a, b) => a + Math.random() * (b - a);
+const randint = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
+const choice = arr => arr[Math.floor(Math.random() * arr.length)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function hex(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; }
+function toHex(r, g, b) { return "#" + [r, g, b].map(v => clamp(Math.round(v), 0, 255).toString(16).padStart(2, "0")).join(""); }
+function mix(c1, c2, t) {
+  t = clamp(t, 0, 1);
+  const a = hex(c1), b = hex(c2);
+  return toHex(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t);
+}
+function lum(c) { const [r, g, b] = hex(c); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; }
+function isLight(c) { return typeof c === "string" && c[0] === "#" && c.length === 7 && lum(c) > 200 / 255; }
+function overlap(a, b) { return a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1]; }
+const nowSec = () => Date.now() / 1000;
+
+// ---------------------------------------------------------------- save
+const SAVE_KEY = "foRexGumpSave_v1";
+function defaultSave() {
+  return {high: 0, coins: 0, diamonds: 0, shield: 0, slowmo: 0, doublejump: 0, magnet: 0,
+    coinx2: 0, ufo_luck: 0, trophy: 0, couple: 0, couple_on: 0,
+    skins: ["skin_grey"], skin: "skin_grey", lands: ["land_desert"], land: "land_desert",
+    accs: ["acc_none"], acc: "acc_none", hairs: ["hair_none"], hair: "hair_none",
+    eyes_owned: ["eyes_classic"], eyes: "eyes_classic", outfits: ["outfit_none"], outfit: "outfit_none",
+    trails: ["trail_none"], trail: "trail_none", pets: ["pet_none"], pet: "pet_none",
+    revive: 0, headstart: 0, lucky: 0, egg: 0, daily_day: "", daily_streak: 0,
+    music: 1, miners: 1, pickaxe: 0, cart: 0, mine_store: 0, mine_time: nowSec(),
+    stat_runs: 0, stat_jumps: 0, stat_bosses: 0, stat_coins: 0, stat_diamonds: 0, stat_level: 1, stat_time: 0};
+}
+function loadSave() {
+  const d = defaultSave();
+  try {
+    const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || "{}");
+    for (const k in raw) if (k in d) d[k] = raw[k];
+  } catch (e) { /* private mode or corrupted: start fresh */ }
+  d.skins = d.skins.filter(k => k !== "skin_classic");          // the white skin was removed
+  if (!d.skins.includes("skin_grey")) d.skins.unshift("skin_grey");
+  if (d.skin === "skin_classic") d.skin = "skin_grey";
+  d.revive = Math.min(d.revive, 1);
+  return d;
+}
+function writeSave(sv) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(sv)); } catch (e) {} }
+
+// =====================================================================
+//  AUDIO: procedural music (rendered once into looping buffers), sound
+//  effects and the narrator voice (the browser's own speech engine).
+// =====================================================================
+function rng(seed) {                                   // small seeded random
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+const midi = n => 440 * Math.pow(2, (n - 69) / 12);
+
+class Synth {
+  constructor(seconds, rate = 22050, seed = 1) {
+    this.rate = rate; this.n = Math.floor(seconds * rate); this.r = rng(seed);
+    this.tables = new Map(); this.cache = new Map();
+  }
+  buffer() { return new Float32Array(this.n); }
+  table(harm) {
+    const key = JSON.stringify(harm);
+    if (!this.tables.has(key)) {
+      const t = new Float32Array(2048);
+      for (let i = 0; i < 2048; i++) { let v = 0; for (const [k, a] of harm) v += a * Math.sin(2 * Math.PI * k * i / 2048); t[i] = v; }
+      this.tables.set(key, t);
+    }
+    return this.tables.get(key);
+  }
+  tone(freq, dur, harm, attack = 0.005, release = 0.05, decay = 0, vib = 0, vibRate = 5, trem = 0) {
+    const key = [freq, dur, JSON.stringify(harm), attack, release, decay, vib, vibRate, trem].join("|");
+    if (this.cache.has(key)) return this.cache.get(key);
+    const tab = this.table(harm), size = 2048, R = this.rate;
+    const n = Math.max(1, Math.floor(dur * R)), na = Math.max(1, Math.floor(attack * R)), nr = Math.max(1, Math.floor(release * R));
+    const inc = freq * size / R, sig = new Float32Array(n), dk = decay ? Math.exp(-decay / R) : 1;
+    let ph = 0, amp = 1;
+    for (let i = 0; i < n; i++) {
+      const step = vib ? inc * (1 + vib * Math.sin(2 * Math.PI * vibRate * i / R)) : inc;
+      ph = (ph + step) % size;
+      let env = amp;
+      if (i < na) env *= i / na;
+      if (n - i < nr) env *= (n - i) / nr;
+      if (trem) env *= 1 - trem * (0.5 + 0.5 * Math.sin(2 * Math.PI * 4 * i / R));
+      sig[i] = tab[ph | 0] * env; amp *= dk;
+    }
+    this.cache.set(key, sig); return sig;
+  }
+  add(buf, sig, start, gain) {                       // wraps: seamless loop
+    const i0 = Math.floor(start * this.rate), n = this.n;
+    for (let k = 0; k < sig.length; k++) buf[(i0 + k) % n] += gain * sig[k];
+  }
+  kick(punch = 1, length = 0.35) {
+    const key = "kick" + punch + "|" + length;
+    if (!this.cache.has(key)) {
+      const n = Math.floor(length * this.rate), s = new Float32Array(n); let ph = 0;
+      for (let i = 0; i < n; i++) { const t = i / this.rate;
+        ph += 2 * Math.PI * (45 + 110 * punch * Math.exp(-t * 35)) / this.rate; s[i] = Math.sin(ph) * Math.exp(-t * 9); }
+      this.cache.set(key, s);
+    }
+    return this.cache.get(key);
+  }
+  noise(length, decay, bright = 1, bodyHz = 0, seed = 0) {
+    const key = ["noise", length, decay, bright, bodyHz, seed].join("|");
+    if (!this.cache.has(key)) {
+      const r = rng(seed + 7), n = Math.floor(length * this.rate), s = new Float32Array(n);
+      let prev = 0, lp = 0;
+      for (let i = 0; i < n; i++) {
+        const t = i / this.rate, x = (r() + r() + r() - 1.5) * 1.4, hp = x - prev; prev = x; lp += 0.35 * (x - lp);
+        let v = (bright * hp + (1 - bright) * lp) * Math.exp(-t * decay);
+        if (bodyHz) v += 0.6 * Math.sin(2 * Math.PI * bodyHz * t) * Math.exp(-t * 30);
+        s[i] = v;
+      }
+      this.cache.set(key, s);
+    }
+    return this.cache.get(key);
+  }
+  duck(buf, beat, depth = 0.6, speed = 9, offset = 0) {
+    const bn = Math.floor(beat * this.rate), env = new Float32Array(bn), off = Math.floor(offset * this.rate);
+    for (let i = 0; i < bn; i++) env[i] = 1 - depth * Math.exp(-speed * i / bn * beat * 4);
+    for (let i = 0; i < this.n; i++) buf[i] *= env[((i - off) % bn + bn) % bn];
+  }
+  lowpass(buf, a) { let y = buf[this.n - 1]; for (let i = 0; i < this.n; i++) { y += a * (buf[i] - y); buf[i] = y; } }
+  finish(layers, peak = 0.85) {
+    const out = new Float32Array(this.n); let m = 1e-9;
+    for (const L of layers) for (let i = 0; i < this.n; i++) out[i] += L[i];
+    for (let i = 0; i < this.n; i++) m = Math.max(m, Math.abs(out[i]));
+    const k = Math.tanh(1.2);
+    for (let i = 0; i < this.n; i++) out[i] = peak * Math.tanh(1.2 * out[i] / m) / k;
+    return out;
+  }
+}
+
+function makeGameMusic() {   // catchy, driving electro loop (140 bpm, A minor, ~55 s)
+  const beat = 60 / 140, bar = 4 * beat, bars = 32, S = new Synth(bars * bar, 22050, 11);
+  const drums = S.buffer(), pump = S.buffer(), lead = S.buffer();
+  const square = [[1, 1], [3, 1 / 3], [5, 1 / 5], [7, 1 / 7], [9, 1 / 9]];
+  const saw = [1, 2, 3, 4, 5, 6, 7].map(k => [k, 1 / k]);
+  const chords = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]];
+  const arpA = [0, 1, 2, 3, 2, 1, 0, 1, 2, 3, 2, 1, 0, 2, 3, 2], arpB = [3, 2, 0, 2, 3, 1, 0, 1, 3, 2, 0, 2, 1, 2, 3, 1];
+  const hook = [[[81, 1], [79, .5], [76, .5], [79, 1], [76, .5], [74, .5]], [[77, 1], [76, .5], [72, .5], [74, 1], [72, 1]],
+    [[76, 1], [79, .5], [84, .5], [83, 1], [79, 1]], [[79, 1.5], [81, .5], [83, 1], [86, 1]]];
+  const hook2 = [[[76, .5], [79, .5], [81, 1], [84, 1], [83, .5], [81, .5]], [[81, .5], [77, .5], [76, 1], [72, 1], [74, 1]],
+    [[79, .5], [76, .5], [79, 1], [84, 1.5], [83, .5]], [[86, 1], [83, 1], [81, 1], [79, 1]]];
+  for (let b = 0; b < bars; b++) {
+    const t0 = b * bar, ch = chords[b % 4], breakdown = b >= 16 && b < 20;
+    const tones = [ch[0] + 12, ch[1] + 12, ch[2] + 12, ch[0] + 24], order = (b >= 20 && b < 28) ? arpB : arpA;
+    for (let k = 0; k < 16; k++) S.add(lead, S.tone(midi(tones[order[k]] + (b >= 20 && b < 24 ? 12 : 0)), beat / 4, square, 0.003, 0.04, 9),
+      t0 + k * beat / 4, (b < 8 || breakdown) ? 0.10 : 0.065);
+    for (let k = 0; k < 4; k++) {
+      if (!breakdown) S.add(drums, S.kick(), t0 + k * beat, 0.9);
+      S.add(drums, S.noise(0.12, 30, 1, 0, k), t0 + k * beat + beat / 2, 0.16);
+      for (const q of [1, 3]) S.add(drums, S.noise(0.04, 80, 1, 0, 9), t0 + k * beat + q * beat / 4, 0.06);
+    }
+    for (const k of [1, 3]) S.add(drums, S.noise(0.22, 18, 0.7, 180, 3), t0 + k * beat, 0.32);
+    if (breakdown) S.add(pump, S.tone(midi(ch[0] - 12), bar * 0.95, saw.slice(0, 5), 0.01, 0.2, 1.2), t0, 0.26);
+    else for (let k = 0; k < 4; k++) S.add(pump, S.tone(midi(ch[0] - 12), beat / 2 * 0.9, saw.slice(0, 5), 0.005, 0.05, 4), t0 + k * beat + beat / 2, 0.30);
+    for (const n of ch) S.add(pump, S.tone(midi(n), bar, saw, 0.05, 0.1), t0, breakdown ? 0.06 : 0.045);
+    if (b === 19) for (let q = 0; q < 16; q++) S.add(drums, S.noise(0.06, 40, 0.8, 200, 4), t0 + q * beat / 4, 0.04 + 0.012 * q);
+    else if (b % 8 === 7) for (let q = 0; q < 8; q++) S.add(drums, S.noise(0.08, 35, 0.8, 200, 4), t0 + 2 * beat + q * beat / 4, 0.10 + 0.02 * q);
+    const mel = ((b >= 8 && b < 16) || b >= 24) ? hook : (b >= 20 && b < 24) ? hook2 : null;
+    if (mel) { let tm = t0; for (const [n, l] of mel[b % 4]) { S.add(lead, S.tone(midi(n), l * beat * 0.95, saw, 0.01, 0.06, 0, 0.004), tm, 0.13); tm += l * beat; } }
+    if ([0, 8, 20, 24].includes(b)) S.add(drums, S.noise(1.5, 2.5, 1, 0, 7), t0, 0.12);
+  }
+  S.duck(pump, beat, 0.65);
+  return [S.finish([drums, pump, lead]), S.rate];
+}
+
+function makeMenuMusic() {   // chill, cosy lo-fi loop (78 bpm)
+  const beat = 60 / 78, bar = 4 * beat, bars = 8, S = new Synth(bars * bar, 22050, 5);
+  const keys = S.buffer(), low = S.buffer(), drums = S.buffer(), extra = S.buffer();
+  const ep = [[1, 1], [2, 0.25], [3, 0.08], [4, 0.04]];
+  const chords = [[53, 57, 60, 64], [57, 60, 64, 67], [50, 53, 57, 60], [46, 50, 53, 57]], bass = [41, 45, 38, 46];
+  const swing = beat / 2 * 0.18;
+  const mel = [[[72, 1.5], [69, .5], [67, 2]], [[69, 1], [72, 1], [76, 2]], [[74, 1.5], [72, .5], [69, 2]], [[70, 1], [69, 1], [65, 2]]];
+  for (let b = 0; b < bars; b++) {
+    const t0 = b * bar, ch = chords[b % 4];
+    for (const [hit, g] of [[0, 0.11], [1.5, 0.07], [3, 0.06]])
+      ch.forEach((n, j) => S.add(keys, S.tone(midi(n), 2.2, ep, 0.01, 0.4, 1.6, 0.002, 0.6, 0.15), t0 + hit * beat + j * 0.025, g));
+    S.add(low, S.tone(midi(bass[b % 4]), beat * 1.8, [[1, 1], [2, 0.2]], 0.02, 0.3, 1.0), t0, 0.32);
+    S.add(low, S.tone(midi(bass[b % 4]), beat * 0.9, [[1, 1], [2, 0.2]], 0.02, 0.2, 2.0), t0 + 2.5 * beat, 0.22);
+    for (const k of [0, 2]) S.add(drums, S.kick(0.5, 0.4), t0 + k * beat, 0.45);
+    S.add(drums, S.kick(0.4, 0.3), t0 + 2.75 * beat, 0.22);
+    for (const k of [1, 3]) S.add(drums, S.noise(0.3, 14, 0.25, 0, 2), t0 + k * beat, 0.22);
+    for (let k = 0; k < 8; k++) S.add(drums, S.noise(0.06, 45, 0.9, 0, 6), t0 + k * beat / 2 + (k % 2 ? swing : 0), k % 2 ? 0.04 : 0.06);
+    if (b >= 4) { let tm = t0; for (const [n, l] of mel[b % 4]) { S.add(extra, S.tone(midi(n + 12), 1.2, [[1, 1], [3, 0.15], [4, 0.1]], 0.003, 0.3, 3), tm, 0.07); tm += l * beat; } }
+  }
+  const r = rng(1);
+  for (let i = 0; i < S.n; i++) { if (r() < 0.0006) extra[i] += (r() - 0.5) * 0.5; extra[i] += (r() - 0.5) * 0.012; }
+  S.lowpass(keys, 0.35); S.lowpass(drums, 0.5); S.duck(keys, beat * 2, 0.15, 5);
+  return [S.finish([keys, low, drums, extra], 0.8), S.rate];
+}
+
+function makeEpicMusic() {   // slow, epic D-minor loop for the Motivation Room (80 bpm)
+  const beat = 60 / 80, bar = 4 * beat, bars = 16, S = new Synth(bars * bar, 22050, 3);
+  const str = S.buffer(), drums = S.buffer(), brass = S.buffer(), choir = S.buffer();
+  const saw = [1, 2, 3, 4, 5, 6].map(k => [k, 1 / k]);
+  const chords = [[50, 53, 57], [46, 50, 53], [48, 52, 55], [45, 49, 52]];       // Dm Bb C A
+  for (let b = 0; b < bars; b++) {
+    const t0 = b * bar, ch = chords[b % 4], big = b >= 8;
+    for (const n of ch) S.add(str, S.tone(midi(n), bar * 1.02, saw, 0.4, 0.5, 0, 0.003, 5), t0, 0.06);
+    S.add(str, S.tone(midi(ch[0] - 24), bar, saw.slice(0, 4), 0.2, 0.4), t0, 0.12);
+    for (let k = 0; k < 8; k++) S.add(str, S.tone(midi(ch[k % 3] + 12), beat / 2 * 0.9, saw.slice(0, 4), 0.01, 0.1, 3), t0 + k * beat / 2, big ? 0.05 : 0.035);
+    S.add(drums, S.kick(0.35, 0.9), t0, 0.7);
+    if (big) { S.add(drums, S.kick(0.35, 0.9), t0 + 2 * beat, 0.5); S.add(drums, S.kick(0.35, 0.6), t0 + 3.5 * beat, 0.35); }
+    if (b % 4 === 3) for (let q = 0; q < 6; q++) S.add(drums, S.kick(0.3, 0.4), t0 + 2.5 * beat + q * beat / 4, 0.18 + 0.05 * q);
+    if (big) for (const n of ch) S.add(brass, S.tone(midi(n + 12), bar * 0.9, saw, 0.15, 0.3, 0, 0.004, 5), t0, 0.05);
+    for (const n of [ch[0] + 12, ch[2] + 12]) S.add(choir, S.tone(midi(n), bar * 1.05, [[1, 1], [2, 0.3], [3, 0.1]], 0.6, 0.6, 0, 0.006, 4.5), t0, big ? 0.09 : 0.06);
+  }
+  S.lowpass(str, 0.3); S.lowpass(brass, 0.25); S.lowpass(drums, 0.4);
+  return [S.finish([str, drums, brass, choir], 0.85), S.rate];
+}
+
+const Audio = {
+  ctx: null, buffers: {}, current: null, currentName: null, master: null, rendering: false,
+  unlock() {                                       // browsers need a click/key first
+    if (this.ctx) { if (this.ctx.state === "suspended") this.ctx.resume(); return; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    this.ctx = new AC(); this.master = this.ctx.createGain(); this.master.gain.value = 0.9;
+    this.master.connect(this.ctx.destination);
+    this.renderAll();
+  },
+  renderAll() {                                    // compose one track at a time
+    const todo = [["menu", makeMenuMusic], ["game", makeGameMusic], ["epic", makeEpicMusic]];
+    const step = () => {
+      if (!todo.length) return;
+      const [name, fn] = todo.shift();
+      const [data, rate] = fn();
+      const buf = this.ctx.createBuffer(1, data.length, rate);
+      buf.getChannelData(0).set(data);
+      this.buffers[name] = buf;
+      if (this.wanted === name) { this.currentName = null; this.play(name); }
+      setTimeout(step, 30);
+    };
+    setTimeout(step, 30);
+  },
+  play(name) {
+    this.wanted = name;
+    if (!this.ctx || name === this.currentName) return;
+    this.stop();
+    if (!name || !this.buffers[name]) return;
+    const src = this.ctx.createBufferSource(), g = this.ctx.createGain();
+    src.buffer = this.buffers[name]; src.loop = true;
+    g.gain.value = name === "epic" ? 0.22 : name === "menu" ? 0.5 : 0.45;
+    src.connect(g); g.connect(this.master); src.start();
+    this.current = {src, g}; this.currentName = name;
+  },
+  stop() {
+    if (this.current) {
+      const {src, g} = this.current, t = this.ctx.currentTime;
+      g.gain.setTargetAtTime(0, t, 0.08); try { src.stop(t + 0.4); } catch (e) {}
+    }
+    this.current = null; this.currentName = null;
+  },
+  sfx(kind) {                                      // tiny synth blips
+    if (!this.ctx || !game.save.music) return;
+    const t = this.ctx.currentTime, o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    const spec = {coin: [988, 1319, 0.08, "square", 0.05], jump: [330, 520, 0.09, "triangle", 0.06],
+      hit: [180, 60, 0.3, "sawtooth", 0.12], level: [523, 1047, 0.25, "square", 0.06],
+      boss: [880, 220, 0.25, "sawtooth", 0.08], power: [440, 1760, 0.3, "triangle", 0.08]}[kind];
+    if (!spec) return;
+    const [f1, f2, d, type, vol] = spec;
+    o.type = type; o.frequency.setValueAtTime(f1, t); o.frequency.exponentialRampToValueAtTime(f2, t + d);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(g); g.connect(this.master); o.start(t); o.stop(t + d + 0.02);
+  },
+};
+
+const Voice = {   // the browser's own speech engine (Edge/Chrome have natural voices)
+  pick() {
+    if (!window.speechSynthesis) return null;
+    const vs = speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang));
+    const prefs = [/natural.*(guy|christopher|eric|andrew|brian|davis)/i, /natural/i, /google uk english male/i,
+      /daniel|guy|david|alex|arthur|fred/i, /male/i];
+    for (const p of prefs) { const v = vs.find(v => p.test(v.name)); if (v) return v; }
+    return vs[0] || null;
+  },
+  speak(text) {
+    if (!window.speechSynthesis) return false;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    const v = this.pick(); if (v) u.voice = v;
+    u.rate = 0.88; u.pitch = 0.85; u.volume = 1;
+    speechSynthesis.speak(u); return true;
+  },
+  stop() { if (window.speechSynthesis) speechSynthesis.cancel(); },
+  name() { const v = this.pick(); return v ? v.name : "no voice found"; },
+};
+
+// =====================================================================
+//  GRAPHICS LAYER
+//  The game is drawn at 900x300 "game units" on an off-screen canvas,
+//  then scaled into the browser window (letterboxed). All text goes on top
+//  at full resolution so it stays sharp (also in the 8-Bit world).
+// =====================================================================
+const GFX = {
+  screen: null, sctx: null, game: null, g: null,
+  f: 1, ox: 0, oy: 0, dpr: 1, sw: W, sh: H,
+  fx: null, ol: null, frame: 0, texts: [], cmap: new Map(), pixel: false,
+};
+const GB = ["#0f380f", "#306230", "#8bac0f", "#c4d88a"];
+const GB_OUTLINE = "#062306";
+
+function gfxInit(canvas) {
+  GFX.screen = canvas; GFX.sctx = canvas.getContext("2d");
+  GFX.game = document.createElement("canvas"); GFX.g = GFX.game.getContext("2d");
+  gfxResize();
+}
+function gfxResize() {
+  if (!GFX.screen) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = window.innerWidth, h = window.innerHeight;
+  GFX.dpr = dpr; GFX.sw = w; GFX.sh = h;
+  GFX.screen.width = Math.round(w * dpr); GFX.screen.height = Math.round(h * dpr);
+  GFX.screen.style.width = w + "px"; GFX.screen.style.height = h + "px";
+  GFX.f = Math.max(0.2, Math.min(w / W, h / H));
+  GFX.ox = (w - W * GFX.f) / 2; GFX.oy = (h - H * GFX.f) / 2;
+}
+function barsVisible() { return GFX.oy >= 50; }
+
+// begin drawing a game frame; pixel = chunky low-resolution mode (8-Bit world)
+function beginGame(fx) {
+  GFX.fx = fx; GFX.pixel = fx === "gameboy"; GFX.texts = []; GFX.ol = null;
+  const scale = GFX.pixel ? 1 / 3 : Math.min(2, GFX.f * GFX.dpr);
+  const gw = Math.round(W * scale), gh = Math.round(H * scale);
+  if (GFX.game.width !== gw || GFX.game.height !== gh) { GFX.game.width = gw; GFX.game.height = gh; }
+  GFX.g.setTransform(scale, 0, 0, scale, 0, 0);
+  GFX.g.imageSmoothingEnabled = !GFX.pixel;
+  GFX.g.lineCap = "round"; GFX.g.lineJoin = "round";
+}
+
+// ---------------------------------------------------- colour filters ---
+function C(c) {
+  const fx = GFX.fx;
+  if (!fx || typeof c !== "string" || c[0] !== "#" || c.length !== 7 || c === GB_OUTLINE) return c;
+  const key = fx + c;
+  let out = GFX.cmap.get(key);
+  if (out) return out;
+  const [r, g, b] = hex(c), L = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  if (fx === "gameboy") out = GB[Math.min(3, Math.floor(L * 4))];
+  else if (fx === "noir") {
+    if (r > 150 && g < 110 && b < 110) out = c;                // only red stays red
+    else { const v = 255 * Math.pow(L, 1.6); out = toHex(v, v, v); }
+  } else {                                                    // sketch: pen on paper
+    const ink = [43, 74, 139], paper = [251, 248, 238], t = Math.pow(L, 1.6);
+    out = toHex(...[0, 1, 2].map(k => (ink[k] + (paper[k] - ink[k]) * t) * 0.7 + [r, g, b][k] * 0.3));
+  }
+  GFX.cmap.set(key, out); return out;
+}
+function J(v, i) {                                            // sketch wobble
+  if (GFX.fx !== "sketch") return v;
+  const bucket = Math.floor(GFX.frame / 7);
+  return v + ((((Math.floor(v * 3) * 73 + i * 151 + bucket * 997) % 17 + 17) % 17) / 17 - 0.5) * 1.6;
+}
+
+// ---------------------------------------------------------- shapes ---
+function finishShape(g, fill, stroke, lw) {
+  if (fill) { g.fillStyle = C(fill); g.fill(); }
+  const s = stroke || (fill && GFX.ol);
+  if (s) { g.strokeStyle = C(s); g.lineWidth = stroke ? (lw || 1) : 1.2; g.stroke(); }
+}
+function R(x1, y1, x2, y2, fill, stroke, lw) {
+  const g = GFX.g;
+  if (GFX.fx === "sketch") { x1 = J(x1, 0); y1 = J(y1, 1); x2 = J(x2, 2); y2 = J(y2, 3); }
+  g.beginPath(); g.rect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+  finishShape(g, fill, stroke, lw);
+}
+function P(pts, fill, stroke, lw) {
+  const g = GFX.g; g.beginPath();
+  for (let i = 0; i < pts.length; i += 2) { const x = J(pts[i], i), y = J(pts[i + 1], i + 1); i ? g.lineTo(x, y) : g.moveTo(x, y); }
+  g.closePath(); finishShape(g, fill, stroke, lw);
+}
+function O(x1, y1, x2, y2, fill, stroke, lw) {
+  const g = GFX.g, rx = Math.abs(x2 - x1) / 2, ry = Math.abs(y2 - y1) / 2;
+  if (rx <= 0 || ry <= 0) return;
+  g.beginPath(); g.ellipse(J((x1 + x2) / 2, 0), J((y1 + y2) / 2, 1), rx, ry, 0, 0, Math.PI * 2);
+  finishShape(g, fill, stroke, lw);
+}
+function L(pts, color, width = 1) {
+  const g = GFX.g; g.beginPath();
+  for (let i = 0; i < pts.length; i += 2) { const x = J(pts[i], i), y = J(pts[i + 1], i + 1); i ? g.lineTo(x, y) : g.moveTo(x, y); }
+  g.strokeStyle = C(color); g.lineWidth = GFX.pixel ? Math.max(width, 2.5) : width; g.stroke();
+}
+function HALF(x1, y1, x2, y2, fill, stroke, lw) {               // top half of an ellipse
+  const g = GFX.g, cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+  g.beginPath(); g.ellipse(cx, cy, Math.abs(x2 - x1) / 2, Math.abs(y2 - y1) / 2, 0, Math.PI, 2 * Math.PI); g.closePath();
+  finishShape(g, fill, stroke, lw);
+}
+// text: queued and drawn sharp on top. opts: {size, bold, align, base, width, font}
+function T(x, y, text, color, size = 12, bold = false, align = "center", base = "middle", width = 0) {
+  GFX.texts.push({x, y, text: String(text), color: C(color), size, bold, align, base, width});
+}
+
+// put the game picture on screen, then the text
+function endGame() {
+  const s = GFX.sctx, d = GFX.dpr;
+  s.setTransform(d, 0, 0, d, 0, 0);
+  s.imageSmoothingEnabled = !GFX.pixel;
+  s.drawImage(GFX.game, GFX.ox, GFX.oy, W * GFX.f, H * GFX.f);
+}
+function flushText(dy = 0) {
+  const s = GFX.sctx, d = GFX.dpr, f = GFX.f;
+  s.setTransform(d * f, 0, 0, d * f, d * GFX.ox, d * (GFX.oy + dy * f));
+  for (const t of GFX.texts) {
+    s.font = (t.bold ? "bold " : "") + t.size + "px 'Courier New', Courier, monospace";
+    s.fillStyle = t.color; s.textAlign = t.align; s.textBaseline = t.base;
+    if (t.width) {                                            // word wrap
+      const words = t.text.split(" "); let line = "", yy = t.y; const lines = [];
+      for (const w of words) { const test = line ? line + " " + w : w;
+        if (s.measureText(test).width > t.width && line) { lines.push(line); line = w; } else line = test; }
+      lines.push(line);
+      yy -= (lines.length - 1) * t.size * 0.6;
+      for (const ln of lines) { s.fillText(ln, t.x, yy); yy += t.size * 1.2; }
+    } else s.fillText(t.text, t.x, t.y);
+  }
+  GFX.texts = [];
+}
+
+// =====================================================================
+//  GAME LOGIC
+// =====================================================================
+class Game {
+  constructor() {
+    this.save = loadSave();
+    this.state = "menu";        // menu, running, over, shop, mine, motivation
+    this.tick = 0; this.menuIndex = 0; this.shopIndex = 0; this.shopScroll = 0; this.shopTab = "power";
+    this.shopFollow = true; this.mineIndex = 0; this.message = ""; this.quoteI = 0; this.soundOn = true;
+    this.embers = []; this.paused = false; this.hudDy = 0; this.adBusy = false;
+    this.stars = Array.from({length: 40}, () => [randint(0, W), randint(10, 160), choice([1, 1, 2])]);
+    this.deco = null;
+    this.reset();
+    const before = this.save.mine_store;
+    this.updateMine(true);
+    const dug = Math.floor(this.save.mine_store - before);
+    const daily = this.dailyReward();
+    if (daily) this.showBanner(daily, 300, "#5cd65c");
+    else if (dug > 0) this.showBanner(`While you were away your miners dug ${dug} coins` +
+      (this.save.mine_store >= this.mineCap() ? " (cart full!)" : ""), 240, "#ffb84d");
+  }
+  dailyReward() {                                   // come back every day: a growing reward
+    const d = new Date(), today = d.toLocaleDateString("en-CA");
+    if (this.save.daily_day === today) return null;
+    const y = new Date(d.getTime() - 86400000).toLocaleDateString("en-CA");
+    this.save.daily_streak = this.save.daily_day === y ? Math.min(7, this.save.daily_streak + 1) : 1;
+    this.save.daily_day = today;
+    const streak = this.save.daily_streak, coins = 25 * streak, gems = streak === 7 ? 2 : 0;
+    this.save.coins += coins; this.save.diamonds += gems; this.write();
+    return `DAY ${streak} DAILY REWARD: +${coins} coins` + (gems ? ` +${gems} diamonds` : "") + (streak < 7 ? "  (come back tomorrow for more)" : "");
+  }
+  get score() { return Math.floor(this.distance) + this.bonus; }
+  write() { writeSave(this.save); }
+
+  reset() {
+    this.dinoX = 60; this.dinoY = GROUND; this.velY = 0; this.ducking = false; this.duckHeld = false;
+    this.airJumps = 0; this.djCool = 0; this.obstacles = []; this.coins = []; this.particles = []; this.popups = [];
+    this.speed = START_SPEED; this.distance = 0; this.bonus = 0; this.frame = 0;
+    this.clouds = Array.from({length: 4}, () => [randint(0, W), randint(30, 120)]);
+    this.hills = []; for (let x = -40; x < W + 200; x += randint(120, 220)) this.addHill(x);
+    this.groundOff = 0; this.nightT = 0; this.nextSpawn = 60; this.nextCoin = 140; this.combo = 0;
+    this.level = 1; this.banner = null; this.shake = 0; this.slowmo = 0; this.invuln = 0;
+    this.event = null; this.nextEvent = randint(500, 900); this.ufo = null; this.orb = null;
+    this.nextUfo = randint(900, 1600) / (this.save.ufo_luck ? 2 : 1); this.boost = null;
+    this.boss = null; this.bossesBeaten = 0; this.nextBoss = BOSS_SPEEDS[0]; this.maxTimer = 0;
+    this.sparks = []; this.shots = []; this.runCoins = 0; this.runGems = 0; this.recordBeaten = false;
+    this.paused = false; this.continued = false; this.doubled = false;
+    this.hitStop = 0; this.coinPulse = 0; this.headstartUsed = false;
+  }
+  addHill(x) { this.hills.push({x, w: randint(160, 300), h: randint(25, 70)}); }
+  land() { return LANDS[this.save.land] || LANDS.land_desert; }
+  worldFx() { return this.land().fx || null; }
+  world() { return this.land().world || null; }
+  col(key) { const l = this.land(); return mix(l.day[key], l.night[key], this.nightT); }
+  coinCol() { return mix(COIN_DAY, COIN_NIGHT, this.nightT); }
+  boostIs(n) { return this.boost && this.boost[0] === n; }
+  eventIs(n) { return this.event && this.event[0] === n; }
+  onGround() { return this.dinoY >= GROUND; }
+  coupleOn() { return !!(this.save.couple && this.save.couple_on); }
+  magnetRange() { return this.boostIs("SUPER MAGNET") ? 300 : [0, 75, 110, 150][this.save.magnet]; }
+
+  // ------------------------------------------------------------ effects
+  showBanner(text, frames = 90, color = null) { this.banner = [text, frames, color]; }
+  popup(text, x, y, color = null, size = 13) { this.popups.push({text, x, y, life: 45, color, size}); }
+  addParticle(x, y, vx, vy, life, color, size, shape = null, grav = 0.15) {
+    this.particles.push({x, y, vx, vy, life, max: life, color, size, shape, grav}); }
+  burst(x, y, n, colors, speed = 4, life = 30) {
+    for (let i = 0; i < n; i++) { const a = rand(0, Math.PI * 2), s = rand(0.3, 1) * speed;
+      this.addParticle(x, y, Math.cos(a) * s, Math.sin(a) * s - 1, randint(life / 2, life), choice(colors), randint(2, 4)); }
+  }
+  dust(x, y, n) { for (let i = 0; i < n; i++) this.addParticle(x, y, rand(-2, -0.5), rand(-1.5, -0.3), randint(10, 20), this.col("fg"), 2); }
+
+  // ------------------------------------------------------------ actions
+  onJump() {
+    if (this.state === "over") { if (!this.shake) this.startRun(); return; }
+    if (this.state !== "running" || this.paused) return;
+    const jump = JUMP * (this.boostIs("MOON JUMP") ? 1.15 : 1);
+    if (this.onGround()) {
+      this.velY = jump; this.save.stat_jumps++; this.airJumps = this.save.doublejump;
+      this.dust(this.dinoX + 15, GROUND, 4); Audio.sfx("jump");
+    } else if (this.airJumps > 0 && this.djCool <= 0) {
+      this.airJumps--; this.djCool = 180; this.velY = Math.min(this.velY, jump * 0.62);
+      this.burst(this.dinoX + 20, this.dinoY - 10, 8, ["#ffffff", "#4db8ff"], 3, 18); Audio.sfx("jump");
+    }
+  }
+  duckPress() { if (this.state !== "running" || this.paused) return;
+    this.duckHeld = true; this.ducking = true; if (!this.onGround()) this.velY = Math.max(this.velY, DIVE); }
+  duckRelease() { this.duckHeld = false; this.ducking = false; }
+  useSlowmo() {
+    if (this.state !== "running" || this.slowmo || this.save.slowmo <= 0) return;
+    this.save.slowmo--; this.slowmo = 240; this.write(); this.showBanner("SLOW-MO!", 60, "#4db8ff");
+  }
+  startRun() { this.reset(); this.state = "running"; Ads.gameplayStart(); }
+  useHeadstart() {
+    if (this.state !== "running" || this.paused || this.headstartUsed || this.frame > 300 || this.save.headstart <= 0) return;
+    this.save.headstart--; this.headstartUsed = true; this.write();
+    this.distance = Math.max(this.distance, LEVEL_LENGTH); this.level = 2; this.speed = Math.max(this.speed, 10);
+    this.boost = ["STAR POWER", 150, "#ffd23f", 150]; this.obstacles = [];
+    this.showBanner("HEAD START!", 80, "#5cd65c"); this.burst(this.dinoX + 25, this.dinoY - 25, 50, CONFETTI, 7, 45); Audio.sfx("power");
+  }
+  setPause(on) { if (this.state !== "running") return; this.paused = on; this.ducking = false;
+    on ? Ads.gameplayStop() : Ads.gameplayStart(); }
+  goMenu() { this.reset(); this.state = "menu"; Voice.stop(); }
+
+  dinoBox() {
+    const b = this.ducking ? [4, -26, 54, 0] : [6, -44, 36, 0], s = this.boostIs("TINY DINO") ? 0.55 : 1;
+    return [this.dinoX + b[0] * s, this.dinoY + b[1] * s, this.dinoX + b[2] * s, this.dinoY + b[3] * s];
+  }
+  static obBox(ob) { return [ob.x + 3, ob.y - ob.h + 3, ob.x + ob.w - 3, ob.y]; }
+
+  // ------------------------------------------------------------ spawning
+  addObstacle(kind, x, y, w, h, extra = {}) { this.obstacles.push(Object.assign({kind, x, y, w, h, passed: false, gap: 999}, extra)); }
+  addCactus(x) {
+    const n = choice(this.level >= 3 ? [1, 1, 2, 2, 3, 4] : [1, 1, 2, 3]);
+    let [w, h] = Math.random() < 0.5 ? [18, 46] : [14, 32];
+    if (this.level >= 5 && Math.random() < 0.2) [w, h] = [22, 58];
+    const look = this.world() ? this.world().ground : null;
+    if (look === "crab") [w, h] = [26, 20];                    // world versions of a cactus group
+    if (look === "moonrock") h = Math.min(h, 40);
+    this.addObstacle("cactus", x, GROUND, n * (w + 4) - 4, h, {n, cw: w, look});
+  }
+  addBird(x, height) {
+    height = height || choice(["low", "mid", "mid", "high"]);
+    const y = GROUND - {low: 20, mid: 38, high: 72}[height];
+    this.addObstacle("bird", x, y, 42, 26, {baseY: y, look: this.world() ? this.world().flyer : null, ph: rand(0, 6)});
+  }
+  addMeteor(tx) { const fall = Math.sqrt(2 * (GROUND + 40) / 0.5);
+    this.addObstacle("meteor", tx + this.speed * fall, -40, 24, 22, {vy: 0, tx}); }
+  addBolt(x) { if (x == null) x = this.dinoX + this.speed * 55 + rand(-40, 300);
+    this.addObstacle("bolt", x, GROUND, 18, 34, {warn: 55, active: 12}); }
+  spawnObstacle() {
+    const lvl = this.level, opts = ["cactus", "cactus", "cactus", "cactus"];
+    if (lvl >= 2) opts.push("bird", "bird", "bird");
+    if (lvl >= 3) opts.push("cactus_bird", "swoop", "swoop");
+    if (lvl >= 4) opts.push("meteor", "meteor");
+    if (lvl >= 5) opts.push("double_cactus", "bird_wall");
+    if (this.world() && lvl >= 2) opts.push("special", "special");
+    const pick = choice(opts), x = W + 10;
+    if (pick === "cactus") this.addCactus(x);
+    else if (pick === "bird") this.addBird(x);
+    else if (pick === "cactus_bird") { this.addCactus(x); this.addBird(x + this.speed * 42, choice(["low", "mid"])); }
+    else if (pick === "swoop") this.addObstacle("swoop", x, GROUND - 40, 42, 26, {phase: rand(0, 6), baseY: GROUND - 40});
+    else if (pick === "meteor") this.addMeteor(rand(W * 0.45, W * 0.8));
+    else if (pick === "double_cactus") { this.addCactus(x); this.addCactus(x + this.speed * 40); }
+    else if (pick === "bird_wall") { this.addBird(x, "mid"); this.addBird(x + 50, "high"); }
+    else if (pick === "special") this.addSpecial(x);
+    const lo = Math.max(40, 74 - 4 * lvl), hi = Math.max(lo + 20, 128 - 8 * lvl);
+    this.nextSpawn = randint(lo, hi) + (pick === "cactus_bird" || pick === "double_cactus" ? 40 : 0);
+  }
+  addSpecial(x) {                                           // each world's own obstacle
+    const sp = this.world().special;
+    if (sp === "puffer") this.addObstacle("puffer", x, GROUND - 2, 22, 18, {grow: 0});
+    else if (sp === "ghost") this.addObstacle("ghost", x, GROUND - 36, 34, 34, {t: randint(0, 60), baseY: GROUND - 36});
+    else if (sp === "rover") this.addObstacle("rover", x, GROUND, 44, 26, {});
+  }
+  addTentacle(x) { this.addObstacle("tentacle", x, GROUND, 22, 0, {warn: 50, up: 0, life: 70}); }
+  addCoin(x, y, value = 1, vy = 0, big = false, gem = false) { this.coins.push({x, y, phase: rand(0, 6), value, vy, big, gem}); }
+  spawnCoins() {
+    const n = choice([2, 3, 3, 4]) + Math.min(Math.floor(this.level / 3), 2), base = GROUND - choice([30, 70, 100]);
+    for (let i = 0; i < n; i++) this.addCoin(W + i * 26, base - 22 * Math.sin(Math.PI * i / (n - 1)));
+    if (this.level >= 2 && Math.random() < (this.save.lucky ? 0.1 : 0.05)) this.addCoin(W + n * 13, base - 40, 1, 0, true, true);
+    const f = Math.max(0.55, 1 - 0.05 * (this.level - 1));
+    this.nextCoin = this.boostIs("COIN FRENZY") ? 40 : randint(Math.floor(220 * f), Math.floor(420 * f));
+  }
+
+  // ------------------------------------------------------------ events
+  startEvent() {
+    let opts = Object.keys(EVENTS).filter(n => this.level >= EVENTS[n][2]);
+    if (this.nightT > 0.3 || Math.floor(this.distance / DAY_LENGTH) % 2) opts = opts.filter(n => n !== "ECLIPSE");
+    const name = choice(opts), [frames, sub] = EVENTS[name];
+    this.event = [name, frames]; this.showBanner(`${name}: ${sub}`, 110, "#b366ff"); Audio.sfx("power");
+    if (name === "TREASURE") this.addCoin(W + 40, GROUND - 105, 10, 0, true);
+    else if (name === "DIAMOND") this.addCoin(W + 40, GROUND - 118, 1, 0, true, true);
+    else if (name === "BIRD FLOCK") { const k = randint(3, 5); for (let i = 0; i < k; i++) this.addBird(W + 20 + i * this.speed * 45, choice(["low", "mid"])); }
+    else if (name === "CACTUS PARADE") for (let i = 0; i < 4; i++) this.addObstacle("cactus", W + 20 + i * this.speed * 38, GROUND, 14, 32, {n: 1, cw: 14});
+    this.nextEvent = randint(900, 1500);
+  }
+  updateEvent(ws) {
+    if (!this.event) {
+      if (!this.boss) { this.nextEvent -= ws; if (this.nextEvent <= 0) this.startEvent(); }
+      return;
+    }
+    let [name, left] = this.event;
+    if (name === "COIN RAIN" && this.frame % 16 === 0) this.addCoin(rand(250, W), -10, 1, rand(2.5, 4));
+    else if (name === "METEOR SHOWER" && this.frame % 55 === 0 && left > 40) this.addMeteor(rand(W * 0.4, W * 0.85));
+    else if (name === "LIGHTNING STORM" && this.frame % 70 === 0 && left > 60) this.addBolt();
+    left -= ws; this.event = left > 0 ? [name, left] : null;
+  }
+
+  // ------------------------------------------------------------ UFO
+  updateUfo(v, ws) {
+    if (!this.ufo) {
+      if (this.boss) return;
+      this.nextUfo -= ws;
+      if (this.nextUfo <= 0) { this.ufo = {x: W + 60, y: 55, phase: "enter", t: 0}; this.showBanner("A UFO APPEARS!", 70, "#5cd65c"); }
+      return;
+    }
+    const u = this.ufo; u.t++;
+    if (u.phase === "enter") { u.x -= 6; if (u.x <= 480) { u.phase = "hover"; u.t = 0; } }
+    else if (u.phase === "hover") {
+      u.x = 480 + 25 * Math.sin(u.t * 0.08);
+      if (u.t === 50) this.orb = {x: u.x, y: u.y + 18, vy: 1.5, t: 0};
+      if (u.t > 90) u.phase = "leave";
+    } else { u.x -= 9; u.y -= 1; if (u.x < -80) { this.ufo = null; this.nextUfo = randint(1500, 2600) / (this.save.ufo_luck ? 2 : 1); } }
+  }
+  updateOrb(v, box) {
+    const o = this.orb; if (!o) return;
+    o.t++; o.x -= v * 0.6; o.y = Math.min(GROUND - 22, o.y + o.vy);
+    if (overlap(box, [o.x - 12, o.y - 12, o.x + 12, o.y + 12])) {
+      const [name, color] = choice(BOOSTS), t = Math.round(BOOST_TIME * (this.save.lucky ? 1.5 : 1));
+      this.boost = [name, t, color, t]; this.orb = null;
+      this.showBanner(name + "!", 90, color); this.burst(this.dinoX + 25, this.dinoY - 25, 40, CONFETTI, 6, 40);
+      Audio.sfx("power");
+    } else if (o.x < -20) this.orb = null;
+  }
+
+  // ------------------------------------------------------------ bosses
+  startBoss() {
+    const n = this.bossesBeaten + 1;
+    let [name, color] = BOSSES[(n - 1) % BOSSES.length];
+    const wb = this.world() && Math.random() < 0.5;            // special worlds: their own boss half the time
+    const worm = !wb && Math.random() < 1 / 3;
+    if (worm) [name, color] = ["SANDWORM", "#c49a6c"];
+    if (wb) [name, color] = this.world().boss;
+    const hp = 3 + n;
+    this.boss = {name, color, n, hp, maxhp: hp, x: W + 120, y: 95, t: 0, phase: "warning", warn: 300,
+      attack: 120, dying: 0, hit: 0, queue: [], sinceStar: 0, specialDone: false, rage: 0, worm, rise: 0, neckY: null};
+    if (worm) Object.assign(this.boss, {x: 770, y: GROUND + 40});
+    this.boss.shot = wb ? this.world().shot : null;
+    this.event = null;
+  }
+  addStar(b) {
+    this.sparks.push({x: b.x - (b.worm ? 40 : 95), y: b.y + 10, t: 0});
+    b.sinceStar = 0;
+  }
+  bossAttack(b) {
+    if (b.worm) return this.wormAttack(b);
+    const n = b.n;
+    if (b.sinceStar >= 3 || Math.random() < 0.3) return this.addStar(b);
+    b.sinceStar++;
+    const opts = ["low", "mid", "high", "low", "mid", "high"];
+    if (n >= 2) opts.push("barrage");
+    const pick = choice(opts);
+    if (pick === "barrage") {
+      const lanes = choice([["low", "high"], ["mid", "low"], ["high", "mid"]]), gap = Math.max(55, 70 - 4 * n);
+      b.queue = [[0, "fire", lanes[0]], [gap, "fire", lanes[1]]];
+    } else this.fireball(b, pick);
+  }
+  fireball(b, lane) { this.addObstacle("fireball", b.x - 60, b.y + 20, 34, 20, {lane, targetY: LANES[lane], look: b.shot}); }
+  addHump(b) { const x = b.x - 70; this.addObstacle("wormhump", x, GROUND, 96, 34);
+    this.burst(x + 10, GROUND, 14, ["#c49a6c", "#e3c497", "#8a5a36"], 4, 25); }
+  addLunge(b, lane) { const end = b.x - 25;
+    this.addObstacle("wormneck", end, WORM_LANES[lane] + 13, 0, 26, {lane, ly: WORM_LANES[lane], head: end, end, stage: "wind", t: 0});
+    b.neckY = WORM_LANES[lane]; }
+  wormAttack(b) {
+    const n = b.n;
+    if (this.obstacles.some(o => o.kind === "wormneck")) { b.attack = 15; return; }
+    if (b.sinceStar >= 3 || Math.random() < 0.3) return this.addStar(b);
+    b.sinceStar++;
+    const opts = ["hump", "hump", "mid", "high", "mid"];
+    if (n >= 2) opts.push("double", "mid");
+    if (n >= 3) opts.push("high", "double");
+    const pick = choice(opts);
+    if (pick === "hump") this.addHump(b);
+    else if (pick === "double") b.queue = [[0, "hump"], [Math.max(42, 55 - 3 * n), "hump"]];
+    else if (this.obstacles.some(o => o.kind === "wormhump")) this.addHump(b);
+    else { this.addLunge(b, pick); b.attack = 175; }
+  }
+  startSpecial(b) {
+    const name = SPECIALS[b.name]; b.specialDone = true; b.rage = 200;
+    this.showBanner(`SPECIAL ATTACK: ${name}!`, 120, "#ff3b3b"); Audio.sfx("boss");
+    const q = []; let d = 40;
+    if (name === "ROCKET BARRAGE") { ["low", "high", "mid", "low", "high", "mid"].forEach((l, i) => q.push([d + i * 38, "fire", l])); d += 6 * 38; }
+    else if (name === "CACTUS STAMPEDE") { for (let i = 0; i < 5; i++) q.push([d + i * 34, "cactus"]); d += 5 * 34; }
+    else if (name === "THUNDERSTORM") { for (let i = 0; i < 5; i++) q.push([d + i * 45, "bolt"]); d += 5 * 45; }
+    else if (name === "TENTACLE SLAM") { for (let i = 0; i < 5; i++) q.push([d + i * 50, "tentacle"]); q.push([d + 270, "fire", "mid"]); d += 300; }
+    else if (name === "GRAVEYARD RISE") { for (let i = 0; i < 4; i++) { q.push([d + i * 55, "tomb"]); q.push([d + i * 55 + 28, "ghost"]); } d += 4 * 55 + 30; }
+    else if (name === "ABDUCTION BEAM") { for (let i = 0; i < 5; i++) q.push([d + i * 48, "beam"]); d += 5 * 48; }
+    else if (name === "EARTHQUAKE") {
+      this.shake = Math.max(this.shake, 40);
+      for (let i = 0; i < 3; i++) q.push([d + i * 48, "hump"]);
+      q.push([d + 3 * 48 + 50, "lunge", "mid"]); d += 3 * 48 + 50 + 175;
+      q.push([d, "hump"]); q.push([d + 50, "hump"]); q.push([d + 150, "lunge", "high"]); d += 150 + 175;
+    } else { for (let i = 0; i < 5; i++) q.push([d + i * 40, "meteor"]); d += 5 * 40; }
+    q.push([d + 30, "star"]); q.push([d + 80, "star"]);
+    b.queue = q;
+  }
+  runQueueItem(b, kind, arg) {
+    if (kind === "fire") this.fireball(b, arg);
+    else if (kind === "cactus") this.addObstacle("cactus", W + 10, GROUND, 14, 32, {n: 1, cw: 14});
+    else if (kind === "bolt") this.addBolt(this.dinoX + this.speed * 40 + rand(0, 200));
+    else if (kind === "meteor") this.addMeteor(rand(W * 0.3, W * 0.7));
+    else if (kind === "star") this.addStar(b);
+    else if (kind === "hump") this.addHump(b);
+    else if (kind === "tentacle") this.addTentacle(this.dinoX + this.speed * 40 + rand(0, 160));
+    else if (kind === "tomb") this.addObstacle("cactus", W + 10, GROUND, 18, 32, {n: 1, cw: 18, look: "tomb"});
+    else if (kind === "ghost") this.addObstacle("ghost", W + 40, GROUND - 36, 34, 34, {t: 0, baseY: GROUND - 36});
+    else if (kind === "beam") this.addObstacle("bolt", this.dinoX + this.speed * 50 + rand(-20, 200), GROUND, 18, 34, {warn: 55, active: 14, look: "beam"});
+    else if (kind === "lunge") this.addLunge(b, arg);
+  }
+  updateWormEntry(b) {
+    if (this.dinoY < GROUND || this.velY < 0) { this.velY += GRAVITY; this.dinoY = Math.min(GROUND, this.dinoY + this.velY);
+      if (this.dinoY >= GROUND) this.velY = 0; }
+    b.t++; b.timer--;
+    this.shake = Math.max(this.shake, b.phase === "rumble" ? 4 : 7);
+    if (this.frame % 4 === 0) this.addParticle(rand(0, W), GROUND, rand(-1, 1), rand(-3, -1), 20, "#c49a6c", 3);
+    if (b.phase === "rumble") { if (b.timer <= 0) { b.phase = "emerge"; b.timer = 130; Audio.sfx("boss"); } }
+    else {
+      b.rise = Math.min(1, b.rise + 0.01); b.y = GROUND + 40 - b.rise * (GROUND + 40 - 118);
+      if (this.frame % 2 === 0) this.burst(b.x + rand(-20, 60), GROUND, 3, ["#c49a6c", "#e3c497", "#8a5a36"], 6, 30);
+      if (b.timer === 40) this.showBanner("THE SANDWORM AWAKENS!", 90, "#c49a6c");
+      if (b.timer <= 0) { b.phase = "fight"; b.attack = 70; }
+    }
+    this.updateWorld(0);
+  }
+  updateBoss(v, ws, box) {
+    const b = this.boss; if (!b) return;
+    b.t++; b.hit = Math.max(0, b.hit - 1); b.rage = Math.max(0, b.rage - 1);
+    if (b.phase === "warning") {
+      b.warn -= 1;
+      if (b.warn <= 0) {
+        if (b.worm) { b.phase = "rumble"; b.timer = 80; this.obstacles = []; }
+        else b.phase = "enter";
+      }
+    } else if (b.phase === "enter") {
+      b.x -= 4; b.y = 95 + 10 * Math.sin(b.t * 0.05);
+      if (b.x <= 760) { b.x = 760; b.phase = "fight"; b.attack = 60; }
+    } else if (b.phase === "fight") {
+      if (b.worm) {
+        if (!this.obstacles.some(o => o.kind === "wormneck")) b.neckY = null;
+        const target = b.neckY || (118 + 22 * Math.sin(b.t * 0.035));
+        b.y += (target - b.y) * 0.12;
+      } else b.y = 95 + 35 * Math.sin(b.t * 0.03);
+      if (b.queue.length) {
+        for (const it of b.queue) it[0] -= ws;
+        while (b.queue.length && b.queue[0][0] <= 0) { const [, k, a] = b.queue.shift(); this.runQueueItem(b, k, a); }
+      } else {
+        b.attack -= ws;
+        if (b.attack <= 0) { this.bossAttack(b); if (b.attack <= 0) b.attack = Math.max(85, 145 - 10 * b.n) + randint(0, 40); }
+      }
+    } else {                                                  // dying
+      b.dying--; b.y += b.worm ? 2.2 : 1.5;
+      if (this.frame % 6 === 0) this.burst(b.x + rand(-40, 40), b.y + rand(-20, 20), 12, ["#ff9f1a", "#ffe14d", "#ff5c5c"], 5, 30);
+      if (b.dying <= 0) {
+        const n = b.n, coins = (20 + 10 * n) * (this.save.coinx2 ? 2 : 1), gems = 1 + Math.floor(n / 2);
+        this.save.coins += coins; this.runCoins += coins; this.save.diamonds += gems; this.runGems += gems;
+        this.bonus += 300 * n; this.bossesBeaten++; this.save.stat_bosses++;
+        this.showBanner(`${b.name} DEFEATED!  +${coins} coins  +${gems} diamonds`, 150, "#ffd23f");
+        this.burst(W / 2, 100, 80, CONFETTI, 7, 70); this.write();
+        this.boss = null; this.sparks = []; this.shots = [];
+        const k = this.bossesBeaten; this.nextBoss = k < BOSS_SPEEDS.length ? BOSS_SPEEDS[k] : null; this.maxTimer = 0;
+        this.nextSpawn = 90;
+      }
+    }
+    // stars: grab them to shoot back
+    for (const sp of this.sparks) {
+      sp.t++; sp.x -= v * 0.55 + 1.5; sp.y += Math.sin(sp.t * 0.1) * 1.2 + (sp.y < GROUND - 60 ? 0.6 : 0);
+      if (overlap(box, [sp.x - 14, sp.y - 14, sp.x + 14, sp.y + 14])) {
+        sp.x = -999; this.shots.push({x: this.dinoX + 40, y: this.dinoY - 30});
+        this.burst(this.dinoX + 30, this.dinoY - 30, 15, ["#ffe14d", "#ffffff"], 4, 20); Audio.sfx("power");
+      }
+    }
+    this.sparks = this.sparks.filter(sp => sp.x > -30);
+    for (const sh of this.shots) {
+      const dx = b.x - sh.x, dy = b.y - sh.y, d = Math.hypot(dx, dy) || 1;
+      sh.x += dx / d * 14; sh.y += dy / d * 14;
+      if (sh.x >= b.x - 40 && b.phase !== "dying") {
+        sh.x = 9999; b.hp--; b.hit = 14; this.shake = Math.max(this.shake, 8); Audio.sfx("hit");
+        this.burst(b.x - 20, b.y, 25, ["#ffe14d", "#ffffff", b.color], 6, 30);
+        this.popup("HIT!", b.x - 40, b.y - 40, "#ffe14d", 16);
+        if (b.hp <= 0) { b.phase = "dying"; b.dying = 110; b.queue = [];
+          this.obstacles = this.obstacles.filter(o => !["fireball", "wormneck", "wormhump"].includes(o.kind)); }
+        else if (!b.specialDone && b.hp <= b.maxhp / 2) this.startSpecial(b);
+      }
+    }
+    this.shots = this.shots.filter(s => s.x < 2000);
+  }
+
+  // ------------------------------------------------------------ main update
+  update() {
+    this.frame++;
+    if (this.boss && (this.boss.phase === "rumble" || this.boss.phase === "emerge")) return this.updateWormEntry(this.boss);
+    if (!this.boss) this.speed = Math.min(this.speed + SPEED_GAIN, MAX_SPEED);
+    const ws = this.slowmo ? 0.5 : 1, rush = this.eventIs("SPEED RUSH") ? 1.35 : 1, v = this.speed * ws * rush;
+    const mult = (this.boostIs("DOUBLE SCORE") || this.eventIs("BONUS ZONE") || this.eventIs("SPEED RUSH")) ? 2 : 1;
+    this.distance += v * 0.02 * mult;
+    this.slowmo = Math.max(0, this.slowmo - 1); this.djCool = Math.max(0, this.djCool - 1); this.invuln = Math.max(0, this.invuln - 1);
+    if (this.boost) this.boost = this.boost[1] > 1 ? [this.boost[0], this.boost[1] - 1, this.boost[2], this.boost[3]] : null;
+    this.coinPulse = Math.max(0, this.coinPulse - 1);
+    this.emitTrail(v);
+    const nl = 1 + Math.floor(this.distance / LEVEL_LENGTH);
+    if (nl > this.level) { this.level = nl; this.showBanner(`LEVEL ${nl}`); this.burst(W / 2, 80, 25, CONFETTI, 5, 40); Audio.sfx("level"); }
+    if (!this.boss) {
+      let due;
+      if (this.nextBoss != null) due = this.speed >= this.nextBoss; else { this.maxTimer++; due = this.maxTimer >= BOSS_AT_MAX; }
+      if (due) this.startBoss();
+    }
+    // dino physics
+    const wasAir = !this.onGround();
+    let g = GRAVITY * (this.ducking && wasAir ? 2.5 : 1);
+    if (this.boostIs("MOON JUMP") && !this.ducking) g *= 0.75;
+    if (this.eventIs("LOW GRAVITY") && !this.ducking) g *= 0.62;
+    if (this.world()) g *= this.world().grav;
+    this.velY += g; this.dinoY += this.velY;
+    if (this.dinoY >= GROUND) { this.dinoY = GROUND; this.velY = 0; if (wasAir) this.dust(this.dinoX + 15, GROUND, 5); }
+    else if (this.frame % 8 === 0 && this.onGround()) this.dust(this.dinoX + 4, GROUND, 1);
+    this.updateEvent(ws); this.updateUfo(v, ws);
+    // obstacles
+    this.nextSpawn -= ws;
+    if (this.nextSpawn <= 0 && !this.boss) this.spawnObstacle();
+    const box = this.dinoBox();
+    for (const ob of this.obstacles) {
+      this.moveObstacle(ob, v, ws);
+      const obb = Game.obBox(ob);
+      if (ob.kind === "bolt" && (ob.warn > 0 || ob.active <= 0)) continue;
+      if (ob.kind === "wormneck" && ob.stage === "wind") continue;
+      if (ob.kind === "tentacle" && ob.up < 10) continue;          // still under the sand
+      if (ob.kind === "ghost" && !Game.ghostSolid(ob)) continue;    // faded out: pass through
+      if (overlap(box, obb) && !this.invuln) {
+        if (this.boostIs("STAR POWER")) { ob.x = -999; this.bonus += 10; this.popup("SMASH +10", this.dinoX + 50, this.dinoY - 60, "#ffb84d");
+          this.burst(obb[0], obb[1], 15, CONFETTI, 5, 25); continue; }
+        if (this.save.shield > 0) { this.save.shield--; this.write(); this.invuln = 90; ob.x = -999; this.combo = 0;
+          this.showBanner("SHIELD SAVED YOU!", 60, "#4db8ff"); this.burst(this.dinoX + 25, this.dinoY - 25, 30, ["#4db8ff", "#ffffff"], 6, 35); continue; }
+        if (this.save.revive > 0) {                 // revive token: keep running
+          this.save.revive--; this.write(); this.continueRun(); this.showBanner(`REVIVE TOKEN USED! (${this.save.revive} left)`, 90, "#5cd65c");
+          return;
+        }
+        return this.die();
+      }
+      if (obb[0] < box[2] && obb[2] > box[0]) ob.gap = Math.min(ob.gap, Math.abs(box[3] - obb[1]), Math.abs(obb[3] - box[1]));
+      if (!ob.passed && obb[2] < box[0]) { ob.passed = true; this.cleared(ob); }
+    }
+    this.obstacles = this.obstacles.filter(ob => ob.x + ob.w > -10);
+    // coins
+    this.nextCoin -= ws;
+    if (this.nextCoin <= 0) this.spawnCoins();
+    const magnet = this.magnetRange(), cx0 = (box[0] + box[2]) / 2, cy0 = (box[1] + box[3]) / 2, kept = [];
+    for (const c of this.coins) {
+      c.phase += 0.15;
+      const dx = cx0 - c.x, dy = cy0 - c.y, dist = Math.hypot(dx, dy) || 1;
+      if (magnet && dist < magnet) c.homing = true;
+      if (c.homing) { c.pull = (c.pull || 6) + 0.8; const st = Math.min(c.pull, dist); c.x += dx / dist * st; c.y += dy / dist * st;
+        if (this.frame % 3 === 0) this.addParticle(c.x, c.y, 0, 0, 8, this.coinCol(), 2); }
+      else { c.x -= v; if (c.vy) { c.y += c.vy; if (c.y >= GROUND - 15) { c.y = GROUND - 15; c.vy = 0; } } }
+      const r = c.big ? 14 : 9;
+      if (overlap(box, [c.x - r, c.y - r, c.x + r, c.y + r])) {
+        if (c.gem) { this.save.diamonds += c.value; this.runGems += c.value; this.popup(`+${c.value} DIAMOND`, c.x, c.y - 20, "#5ce1ff", 15);
+          this.burst(c.x, c.y, 30, ["#5ce1ff", "#ffffff", "#b3f3ff"], 5, 35); this.write(); Audio.sfx("power"); continue; }
+        const value = c.value * (this.save.coinx2 ? 2 : 1); this.runCoins += value; this.save.coins += value; Audio.sfx("coin"); this.coinPulse = 10;
+        if (c.big) { this.popup(`TREASURE +${value}`, c.x, c.y - 20, this.coinCol()); this.burst(c.x, c.y, 30, [this.coinCol(), "#fff2a8"], 5, 35); }
+        else this.burst(c.x, c.y, 5, [this.coinCol(), "#fff2a8"], 2.5, 15);
+      } else if (c.x > -20) kept.push(c);
+    }
+    this.coins = kept;
+    this.updateOrb(v, box); this.updateBoss(v, ws, box);
+    if (!this.recordBeaten && this.save.high > 0 && this.score > this.save.high) {
+      this.recordBeaten = true; this.showBanner("NEW RECORD!"); this.burst(W / 2, 80, 60, CONFETTI, 7, 70); Audio.sfx("level"); }
+    this.updateWorld(v);
+  }
+  static ghostSolid(ob) { return (ob.t % 100) < 60; }
+  moveObstacle(ob, v, ws) {
+    const k = ob.kind;
+    if (k === "bird") {
+      ob.x -= v * 1.1; ob.ph = (ob.ph || 0) + 0.12 * ws;
+      // gentle bobbing that never changes whether you must jump or duck
+      const amp = ob.baseY >= GROUND - 25 ? 0 : ob.baseY >= GROUND - 45 ? 4 : 7;
+      if (ob.look === "jelly") ob.y = ob.baseY + amp * Math.sin(ob.ph);
+      else if (ob.look === "bat") ob.y = ob.baseY + amp * Math.sin(ob.ph * 2.2);
+    }
+    else if (k === "puffer") {                                  // puffs up when you get close
+      ob.x -= v * 0.9;
+      const near = ob.x - this.dinoX < 260;
+      ob.grow = clamp(ob.grow + (near ? 0.06 : 0) * ws, 0, 1);
+      ob.w = 22 + 18 * ob.grow; ob.h = 18 + 20 * ob.grow;
+    }
+    else if (k === "ghost") { ob.x -= v * 0.95; ob.t += ws; ob.y = ob.baseY + 4 * Math.sin(ob.t * 0.08); }
+    else if (k === "rover") { ob.x -= v * 1.35; if (this.frame % 6 === 0) this.addParticle(ob.x + ob.w, GROUND - 2, rand(0, 1), rand(-1, 0), 14, "#9aa0ab", 2); }
+    else if (k === "tentacle") {
+      ob.x -= v;
+      if (ob.warn > 0) { ob.warn -= ws; if (this.frame % 4 === 0) this.addParticle(ob.x + 11, GROUND, rand(-1, 1), rand(-2, -0.5), 16, "#bfe9ff", 3); }
+      else { ob.life -= ws; ob.up = ob.life > 12 ? Math.min(48, ob.up + 6) : Math.max(0, ob.up - 5); ob.h = ob.up; if (ob.life <= 0) ob.x = -999; }
+    }
+    else if (k === "swoop") { ob.x -= v * 1.05; ob.phase += 0.06 * ws; ob.y = ob.baseY + 30 * Math.sin(ob.phase); }
+    else if (k === "meteor") {
+      ob.x -= v; ob.tx -= v; ob.vy += 0.5 * ws; ob.y += ob.vy * ws;
+      if (ob.y >= GROUND) { Object.assign(ob, {kind: "rock", y: GROUND, w: 26, h: 20}); this.shake = Math.max(this.shake, 8);
+        this.burst(ob.x + 12, GROUND, 20, ["#ff7b29", "#ffcf3f", "#8a8a8a"], 5, 30); }
+    } else if (k === "bolt") {
+      ob.x -= v;
+      if (ob.warn > 0) { ob.warn -= ws; if (ob.warn <= 0) { this.shake = Math.max(this.shake, 10);
+        this.burst(ob.x + 9, GROUND - 5, 20, ["#fff7a8", "#ffe14d", "#ffffff"], 6, 20); } }
+      else if (ob.active > 0) ob.active -= ws; else ob.x = -999;
+    } else if (k === "fireball") { ob.x -= v + 3; ob.y += (ob.targetY - ob.y) * 0.14; }
+    else if (k === "wormhump") { ob.x -= v + 2; if (this.frame % 5 === 0) this.addParticle(ob.x + ob.w, GROUND, rand(0, 2), rand(-3, -1), 18, "#c49a6c", 3); }
+    else if (k === "wormneck") {
+      ob.t++;
+      if (ob.stage === "wind" && ob.t >= 45) { ob.stage = "out"; ob.t = 0; this.shake = Math.max(this.shake, 6); }
+      else if (ob.stage === "out") { ob.head -= 17; if (ob.head <= -70) { ob.stage = "hold"; ob.t = 0; } }
+      else if (ob.stage === "hold" && ob.t >= 14) ob.stage = "back";
+      else if (ob.stage === "back") { ob.head += 17; if (ob.head >= ob.end) { ob.x = -999; ob.w = 0; return; } }
+      ob.x = ob.head; ob.w = Math.max(0, ob.end - ob.head);
+    } else ob.x -= v;
+  }
+  cleared(ob) {
+    if (ob.kind === "meteor") return;
+    this.combo++; this.bonus += 2 * Math.min(this.combo, 10);
+    if (ob.gap < 10) { this.bonus += 25; this.popup("CLOSE CALL! +25", this.dinoX + 50, this.dinoY - 60, "#ff9f1a");
+      this.burst(this.dinoX + 20, this.dinoY - 30, 10, ["#ff9f1a", "#ffe14d"], 4, 25); }
+    if ([15, 30, 50, 75, 100].includes(this.combo)) { this.bonus += this.combo * 5;
+      this.showBanner(`COMBO x${this.combo}!  +${this.combo * 5}`, 90, "#4db8ff"); this.burst(W / 2, 95, 35, CONFETTI, 5, 45); }
+  }
+  emitTrail(v) {
+    const t = this.save.trail; if (t === "trail_none" || this.frame % 2) return;
+    const s = this.boostIs("TINY DINO") ? 0.55 : 1, x = this.dinoX + 2 * s, y = this.dinoY - (this.ducking ? 14 : 24) * s + rand(-6, 6) * s, vx = -v * 0.45;
+    if (t === "trail_rainbow") this.addParticle(x, y, vx, 0, 22, CONFETTI[Math.floor(this.frame / 2) % CONFETTI.length], 5, null, 0);
+    else if (t === "trail_sparkle") this.addParticle(x, y, vx, rand(-0.5, 0.5), 26, choice(["#ffffff", "#ffe14d", "#bfe9ff"]), 4, "star", 0);
+    else if (t === "trail_hearts" && this.frame % 6 === 0) this.addParticle(x, y, vx, -0.6, 34, choice(["#ff4f7b", "#ff8fb8"]), 4, "heart", -0.01);
+    else if (t === "trail_fire") this.addParticle(x, y + 6, vx, rand(-1.5, -0.5), 20, choice(["#ffe14d", "#ff9f1a", "#ff5c5c"]), randint(3, 5), null, -0.05);
+    else if (t === "trail_bubbles" && this.frame % 4 === 0) this.addParticle(x, y, vx * 0.8, -0.8, 40, "#7fd4ff", randint(3, 6), "bubble", -0.02);
+  }
+  die() {
+    this.state = "over"; this.shake = 20; this.hitStop = 16; this.banner = null; this.ducking = false; this.boost = null; this.paused = false;
+    this.save.stat_runs++; this.save.stat_level = Math.max(this.save.stat_level, this.level);
+    this.newHigh = this.score > this.save.high;
+    if (this.newHigh) this.save.high = this.score;
+    this.write(); Audio.sfx("hit"); Ads.gameplayStop();
+    this.burst(this.dinoX + 25, this.dinoY - 25, 25, ["#ff5c5c", "#ffb84d", this.col("fg")], 5, 35);
+  }
+  // rewarded ad: keep going once per run
+  continueRun() {
+    this.state = "running"; this.continued = true; this.invuln = 150; this.shake = 0;
+    this.obstacles = this.obstacles.filter(o => o.x > this.dinoX + 260);
+    if (this.boss) this.obstacles = this.obstacles.filter(o => !["fireball", "wormneck", "wormhump"].includes(o.kind));
+    this.dinoY = GROUND; this.velY = 0; this.showBanner("BACK IN THE RUN!", 80, "#5cd65c"); Ads.gameplayStart();
+  }
+
+  updateWorld(v) {
+    this.tick++;
+    const target = (this.land().decor === "haunted" || this.eventIs("ECLIPSE") || this.eventIs("LIGHTNING STORM") || Math.floor(this.distance / DAY_LENGTH) % 2) ? 1 : 0;
+    this.nightT += (target - this.nightT) * 0.02;
+    this.groundOff = (this.groundOff + v) % 40;
+    for (const c of this.clouds) { c[0] -= v * 0.15 + 0.2; if (c[0] < -80) { c[0] = W + randint(0, 200); c[1] = randint(30, 120); } }
+    for (const h of this.hills) h.x -= v * 0.25;
+    this.hills = this.hills.filter(h => h.x + h.w > -20);
+    const last = this.hills.length ? Math.max(...this.hills.map(h => h.x)) : 0;
+    if (last < W + 50) this.addHill(last + randint(120, 220));
+    for (const p of this.particles) { p.x += p.vx; p.y += p.vy; p.vy += p.grav ?? 0.15; p.life--; }
+    this.particles = this.particles.filter(p => p.life > 0);
+    for (const t of this.popups) { t.y -= 0.8; t.life--; }
+    this.popups = this.popups.filter(t => t.life > 0);
+    if (this.banner) this.banner = this.banner[1] > 1 ? [this.banner[0], this.banner[1] - 1, this.banner[2]] : null;
+    this.shake = Math.max(0, this.shake - 1);
+  }
+
+  // ------------------------------------------------------------ mine
+  mineRate() { return this.save.miners * 3 * (1 + 0.8 * this.save.pickaxe); }
+  mineCap() { return 60 * (1 + this.save.cart); }
+  updateMine(offline = false) {
+    const now = nowSec();
+    let dt = Math.min(Math.max(0, now - this.save.mine_time), MINE_MAX_OFFLINE);
+    if (!offline) dt = Math.min(dt, 120);
+    const gain = this.mineRate() / 60 * dt;
+    let store = this.save.mine_store;
+    store = offline ? Math.max(store, Math.min(this.mineCap(), store + gain)) : store + gain;
+    this.save.mine_store = store; this.save.mine_time = now;
+  }
+  mineCost(item) {
+    const s = this.save;
+    if (item === "HIRE MINER") return s.miners - 1 < MINER_COSTS.length ? MINER_COSTS[s.miners - 1] : null;
+    if (item === "BETTER PICKAXE") return s.pickaxe < PICK_COSTS.length ? PICK_COSTS[s.pickaxe] : null;
+    if (item === "BIGGER CART") return s.cart < CART_COSTS.length ? CART_COSTS[s.cart] : null;
+    return null;
+  }
+  mineAction(item) {
+    const s = this.save;
+    if (item === "BACK") return this.goMenu();
+    if (item === "COLLECT COINS") {
+      this.updateMine(); const c = Math.floor(s.mine_store);
+      if (c > 0) { s.coins += c; s.mine_store -= c; this.message = `Collected ${c} coins!`; Audio.sfx("coin"); }
+      else this.message = "Nothing to collect yet.";
+      return this.write();
+    }
+    const cost = this.mineCost(item);
+    if (cost == null) { this.message = "Already maxed out!"; return; }
+    if (s.diamonds < cost) { this.message = `You need ${cost} diamonds (you have ${s.diamonds}).`; return; }
+    this.updateMine(); s.diamonds -= cost;
+    if (item === "HIRE MINER") s.miners++; else if (item === "BETTER PICKAXE") s.pickaxe++; else s.cart++;
+    this.message = `${item.toLowerCase()} - done!`; Audio.sfx("power"); this.write();
+  }
+
+  // ------------------------------------------------------------ shop
+  shopItems() { return SHOPS[this.shopTab][1]; }
+  openShop(tab) { this.shopTab = tab; this.state = "shop"; this.message = ""; this.shopIndex = 0; this.shopScroll = 0; this.shopFollow = true; }
+  shopRows(items) {
+    const rows = []; let last = null;
+    items.forEach((it, i) => { if (this.shopTab === "style" && it[4] !== last) { rows.push(["header", SECTION_NAME[it[4]] || ""]); last = it[4]; }
+      rows.push(["item", i]); });
+    return rows;
+  }
+  ownedList(kind) { return this.save[SLOT_LIST[kind]]; }
+  itemPrice(it) { const [iid, , , price, kind] = it; return kind === "level" ? (this.save[iid] < price.length ? price[this.save[iid]] : null) : price; }
+  itemStatus(it) {
+    const [iid, , , , kind, mx] = it, s = this.save;
+    if (kind === "toggle") return s[iid] ? (s[iid + "_on"] ? "ON" : "off") : "";
+    if (COSMETIC.includes(kind)) return s[kind] === iid ? "EQUIPPED" : this.ownedList(kind).includes(iid) ? "owned" : "";
+    if (kind === "perm") return s[iid] ? "OWNED" : "";
+    if (kind === "egg") return s.egg ? `opened ${s.egg}` : "";
+    return `${s[iid]}/${mx}`;
+  }
+  priceText(it) {
+    const [iid, , , , kind, mx] = it, s = this.save;
+    if (COSMETIC.includes(kind) && this.ownedList(kind).includes(iid)) return "-";
+    if (kind === "toggle" && s[iid]) return "-";
+    if (!COSMETIC.includes(kind) && kind !== "toggle" && kind !== "egg" && s[iid] >= mx) return "MAX";
+    const p = this.itemPrice(it); return p == null ? "MAX" : p === 0 ? "free" : `${p} c`;
+  }
+  hatchEgg(price) {
+    const s = this.save;
+    if (s.coins < price) { this.message = `Not enough coins (${price - s.coins} more needed)`; return; }
+    s.coins -= price; s.egg++;
+    const pool = SHOP.filter(it => COSMETIC.includes(it[4]) && it[3] > 0 && !this.ownedList(it[4]).includes(it[0]));
+    if (!pool.length) { s.coins += 200; this.message = "The egg hatched 200 coins - you own everything!"; }
+    else {
+      // cheap items are much more likely than expensive ones
+      const weights = pool.map(it => Math.pow(1 / it[3], 1.3)), total = weights.reduce((a, b) => a + b, 0);
+      let r = Math.random() * total, it = pool[pool.length - 1];
+      for (let i = 0; i < pool.length; i++) { r -= weights[i]; if (r <= 0) { it = pool[i]; break; } }
+      this.ownedList(it[4]).push(it[0]); s[it[4]] = it[0];
+      this.message = `The egg hatched: ${it[1]}! (equipped)`; }
+    this.burst(730, 140, 60, CONFETTI, 7, 50); Audio.sfx("level"); this.write();
+  }
+  buy(it) {
+    const [iid, name, , , kind, mx] = it, s = this.save;
+    if (kind === "egg") return this.hatchEgg(this.itemPrice(it));
+    if (kind === "toggle" && s[iid]) { s[iid + "_on"] = s[iid + "_on"] ? 0 : 1; this.message = `${name}: ${s[iid + "_on"] ? "ON" : "off"}`; return this.write(); }
+    if (COSMETIC.includes(kind) && this.ownedList(kind).includes(iid)) { s[kind] = iid; this.message = `${name} equipped`; return this.write(); }
+    if (!COSMETIC.includes(kind) && kind !== "toggle" && s[iid] >= mx) { this.message = "Already maxed out!"; return; }
+    const price = this.itemPrice(it);
+    if (s.coins < price) { this.message = `Not enough coins (${price - s.coins} more needed)`; return; }
+    s.coins -= price;
+    if (COSMETIC.includes(kind)) { this.ownedList(kind).push(iid); s[kind] = iid; }
+    else if (kind === "toggle") { s[iid] = 1; s[iid + "_on"] = 1; }
+    else s[iid]++;
+    this.message = `Bought ${name}!`; Audio.sfx("power");
+    this.burst(730, 150, 30, CONFETTI, 5, 35); this.write();
+  }
+
+  // ------------------------------------------------------------ motivation room
+  showQuote(i) {
+    this.quoteI = ((i % QUOTES.length) + QUOTES.length) % QUOTES.length;
+    this.affirm = choice(AFFIRMATIONS);
+    if (this.soundOn) { const [q, who] = QUOTES[this.quoteI]; Voice.speak(`${q} ... ${who.replace(/\(attributed\)/, "")}`); }
+  }
+  updateMotivation() {
+    const [x0, y0, x1, y1] = this.view || [0, 0, W, H], area = (x1 - x0) / W;
+    if (Math.random() < 0.3 * area) this.embers.push({x: rand(x0, x1), y: y1 + 5, vy: rand(-1.6, -0.6), life: randint(80, 160) * (y1 - y0) / H});
+    for (const e of this.embers) { e.y += e.vy; e.x += Math.sin((e.y + this.tick) * 0.05) * 0.4; e.life--; }
+    this.embers = this.embers.filter(e => e.life > 0 && e.y > y0 - 5);
+    this.tick++;
+  }
+
+  // ------------------------------------------------------------ per frame
+  trackStats() {
+    for (const [key, stat] of [["coins", "stat_coins"], ["diamonds", "stat_diamonds"]]) {
+      const last = this["_last_" + key] ?? this.save[key];
+      if (this.save[key] > last) this.save[stat] += this.save[key] - last;
+      this["_last_" + key] = this.save[key];
+    }
+    if (this.state === "running" && !this.paused) this.save.stat_time += 1 / 60;
+  }
+  wantedMusic() {
+    if (this.state === "motivation") return this.soundOn ? "epic" : null;
+    if (!this.save.music) return null;
+    return this.state === "running" ? "game" : "menu";
+  }
+  step() {
+    this.trackStats(); updateDeco(this);
+    if (this.tick % 60 === 0) this.updateMine();
+    if (this.tick % 1800 === 0) this.write();
+    if (this.state === "running" && this.paused) this.tick++;
+    else if (this.state === "over" && this.hitStop > 0) { this.hitStop--; this.tick++; }   // freeze-frame on a crash
+    else if (this.state === "running") this.update();
+    else if (this.state === "motivation") this.updateMotivation();
+    else this.updateWorld(this.state === "menu" ? 2 : 0);
+  }
+}
+
+// =====================================================================
+//  DRAWING: scenes, dino, obstacles, bosses, HUD and every screen
+// =====================================================================
+const D = {};   // small namespace for drawing helpers that need the game
+
+// ---------------------------------------------------------------- dino
+function drawHair(R2, P2, hair, hx, hy, ducking, back, tick) {
+  const [style, c] = hair, X = v => v + hx, Y = v => v + hy, bounce = 2 * Math.sin(tick * 0.35);
+  if (back) {
+    if (style === "long") {
+      if (ducking) P2([X(20), Y(-52), X(26), Y(-52), X(12), Y(-42), X(4), Y(-44)], c);
+      else { R2(X(15), Y(-52), X(24), Y(-26), c); P2([X(15), Y(-26), X(24), Y(-26), X(19), Y(-22)], c); }
+    } else if (style === "ponytail") {
+      R2(X(16), Y(-53), X(22), Y(-47), c);
+      P2([X(16), Y(-52), X(17), Y(-46), X(6), Y(-36 + bounce), X(4), Y(-42 + bounce)], c);
+    }
+    return;
+  }
+  if (style === "quiff") {
+    R2(X(20), Y(-53), X(40), Y(-50), c); P2([X(26), Y(-53), X(44), Y(-53), X(46), Y(-58), X(32), Y(-57)], c);
+    R2(X(20), Y(-50), X(23), Y(-44), c);
+  } else if (style === "long") {
+    R2(X(18), Y(-54), X(42), Y(-50), c); P2([X(36), Y(-54), X(44), Y(-52), X(44), Y(-47), X(38), Y(-50)], c);
+    R2(X(18), Y(-50), X(23), Y(-36), c);
+  } else if (style === "ponytail") {
+    R2(X(19), Y(-54), X(42), Y(-50), c); R2(X(15), Y(-55), X(20), Y(-50), "#ffe14d");
+  } else if (style === "curly") {
+    for (const [cx, cy] of [[22, -52], [28, -55], [34, -55], [40, -52], [19, -47], [25, -51], [31, -52], [37, -50]])
+      P2([X(cx - 4), Y(cy), X(cx), Y(cy - 4), X(cx + 4), Y(cy), X(cx), Y(cy + 4)], c);
+  } else if (style === "mohawk") {
+    for (let i = 0; i < 4; i++) { const bx = 22 + i * 5; P2([X(bx), Y(-50), X(bx + 5), Y(-50), X(bx + 1), Y(-60 - (i % 2) * 3)], c); }
+  }
+}
+function drawOutfit(R2, P2, outfit, ducking, wave) {
+  if (outfit === "outfit_scarf") {
+    if (ducking) { R2(38, -18, 46, -12, "#2f6fd6"); R2(30, -18 + wave, 38, -15 + wave, "#2f6fd6"); }
+    else { R2(20, -35, 34, -30, "#2f6fd6"); R2(12, -35 + wave, 20, -31 + wave, "#2f6fd6"); R2(9, -33 + 2 * wave, 13, -29 + 2 * wave, "#ffffff"); }
+  } else if (outfit === "outfit_bowtie") {
+    const [bx, by] = ducking ? [46, -14] : [32, -31];
+    P2([bx - 5, by - 3, bx, by, bx - 5, by + 3], "#d62828"); P2([bx + 5, by - 3, bx, by, bx + 5, by + 3], "#d62828");
+    R2(bx - 1, by - 1, bx + 1, by + 1, "#7a0c0c");
+  } else if (outfit === "outfit_suit") {
+    if (ducking) { R2(30, -20, 46, -12, "#ffffff"); R2(30, -17, 44, -15, "#1d3557"); }
+    else { P2([20, -32, 30, -32, 30, -16, 25, -14], "#ffffff"); P2([26, -31, 29, -31, 28, -18, 27, -17, 25, -18], "#1d3557"); }
+  } else if (outfit === "outfit_tutu") {
+    const ty = ducking ? -10 : -14, [x1, x2] = ducking ? [0, 46] : [2, 32], pts = [x1, ty - 4];
+    for (let k = 0; k <= Math.floor((x2 - x1) / 4); k++) pts.push(x1 + 4 * k, ty + (k % 2 ? 4 : 1));
+    pts.push(x2, ty - 4); P2(pts, "#ff8fc8");
+  }
+}
+function drawDinoShape(game, x, y, s, body, bg, o = {}) {
+  const {ducking = false, legsUp = false, dead = false, acc = "acc_none", hair = null, eyes = null,
+    outfit = "outfit_none", lashes = false, bow = false, skinFx = null} = o;
+  const R2 = (x1, y1, x2, y2, c) => R(x + x1 * s, y + y1 * s, x + x2 * s, y + y2 * s, c);
+  const P2 = (pts, c) => P(pts.map((v, i) => i % 2 ? y + v * s : x + v * s), c);
+  const O2 = (cx, cy, r, c) => O(x + (cx - r) * s, y + (cy - r) * s, x + (cx + r) * s, y + (cy + r) * s, c);
+  const tick = game.tick;
+  let [hx, hy] = ducking ? [20, 20] : [0, 0];
+  const [backX, backY] = ducking ? [2, -26] : [6, -34];
+  const savedOl = GFX.ol; GFX.ol = null;          // the dino gets its own outline below
+  if (FLAGS[acc]) {
+    const top = backY - 34; R2(backX - 1, top, backX + 1, backY, "#6b4a2b");
+    const waves = [0, 1, 2, 3, 4].map(i => 2 * Math.sin(tick * 0.25 - i * 0.9));
+    for (let i = 0; i < 5; i++) FLAGS[acc].forEach((c, j) => R2(backX + 1 + i * 5, top + 1 + j * 4 + waves[i], backX + 6 + i * 5, top + 5 + j * 4 + waves[i], c));
+    if (acc === "acc_flag_tr") {
+      const fx = backX + 10, fy = top + 7 + (waves[1] + waves[2]) / 2;
+      O2(fx, fy, 3.6, "#ffffff"); O2(fx + 1.2, fy, 2.9, "#e30a17");
+      const pts = []; for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? 0.8 : 1.9; pts.push(fx + 5.2 + rr * Math.cos(a), fy + rr * Math.sin(a)); }
+      P2(pts, "#ffffff");
+    }
+  }
+  const wave = Math.sin(tick * 0.3);
+  if (outfit === "outfit_cape") ducking ? P2([36, -26, 44, -26, 14, -16 + 2 * wave, -8, -22 + 3 * wave], "#d62828")
+    : P2([18, -36, 26, -34, 4, -6 + 2 * wave, -12, -12 + 3 * wave], "#d62828");
+  if (hair) drawHair(R2, P2, hair, hx, hy, ducking, true, tick);
+  const l1 = legsUp ? 0 : 6, l2 = legsUp ? 6 : 0, eyec = isLight(body) ? "#2b2b2b" : bg;
+  const ol = savedOl || D.outlineFor(game) || (skinFx === "galaxy" ? "#7a5cff" : null);   // galaxy: soft glow edge
+  if (ol) {                                        // thin outline (Film Noir / 8-Bit)
+    const oo = 1.3 / Math.max(s, 0.5);
+    const parts = (ducking ? [[0, -26, 46, -8], [40, -30, 60, -14]] :
+      [[4, -34, 30, -12], [20, -50, 44, -32], [30, -28, 36, -24], [-6, -30, 6, -22]]).concat([[8, -12, 13, -l1], [20, -12, 25, -l2]]);
+    for (const [a, b, c, d] of parts) R2(a - oo, b - oo, c + oo, d + oo, ol);
+  }
+  if (ducking) {
+    R2(0, -26, 46, -8, body); R2(40, -30, 60, -14, body);
+    if (dead || !eyes) R2(50, -26, 53, -23, eyec);
+    else { R2(49, -27, 54, -22, "#ffffff"); R2(50, -26, 53, -23, eyes); R2(51, -26, 52, -25, "#ffffff"); }
+    if (lashes) { R2(49, -29, 50, -27, "#111111"); R2(52, -29, 53, -27, "#111111"); }
+  } else {
+    R2(4, -34, 30, -12, body); R2(20, -50, 44, -32, body);
+    if (dead) { L([x + 25 * s, y - 47 * s, x + 31 * s, y - 41 * s], eyec, 2); L([x + 31 * s, y - 47 * s, x + 25 * s, y - 41 * s], eyec, 2); }
+    else if (eyes) { R2(25, -47, 31, -41, "#ffffff"); R2(26, -46, 30, -42, eyes); R2(28, -46, 29, -45, "#ffffff"); }
+    else R2(26, -46, 30, -42, eyec);
+    if (lashes && !dead) { R2(24, -49, 25, -47, "#111111"); R2(27, -50, 28, -47, "#111111"); R2(30, -49, 31, -47, "#111111"); }
+    R2(30, -28, 36, -24, body); R2(-6, -30, 6, -22, body);
+  }
+  R2(8, -12, 13, -l1, body); R2(20, -12, 25, -l2, body);
+  if (skinFx && GFX.fx !== "gameboy") drawSkinPattern(game, x, y, s, skinFx, ducking, dead, l1, l2);
+  drawOutfit(R2, P2, outfit, ducking, wave);
+  if (hair) drawHair(R2, P2, hair, hx, hy, ducking, false, tick);
+  if (bow) { P2([24 + hx, -56 + hy, 30 + hx, -53 + hy, 24 + hx, -50 + hy], "#ff4f7b");
+    P2([36 + hx, -56 + hy, 30 + hx, -53 + hy, 36 + hx, -50 + hy], "#ff4f7b"); R2(29 + hx, -54 + hy, 31 + hx, -52 + hy, "#c9184a"); }
+  if (hair) hy -= 4;
+  if (acc === "acc_crown") { P2([22 + hx, -50 + hy, 42 + hx, -50 + hy, 42 + hx, -60 + hy, 37 + hx, -55 + hy, 32 + hx, -62 + hy, 27 + hx, -55 + hy, 22 + hx, -60 + hy], "#ffcc00");
+    R2(30 + hx, -56 + hy, 34 + hx, -53 + hy, "#ff3b3b"); }
+  else if (acc === "acc_partyhat") { P2([26 + hx, -50 + hy, 40 + hx, -50 + hy, 33 + hx, -68 + hy], "#b366ff");
+    R2(29 + hx, -56 + hy, 37 + hx, -54 + hy, "#ffe14d"); O2(33 + hx, -69.5 + hy, 2.5, "#ff5c5c"); }
+  else if (acc === "acc_tophat") { R2(19 + hx, -53 + hy, 45 + hx, -50 + hy, "#1a1a1a"); R2(24 + hx, -68 + hy, 40 + hx, -53 + hy, "#1a1a1a");
+    R2(24 + hx, -57 + hy, 40 + hx, -54 + hy, "#c0392b"); }
+  else if (acc === "acc_cowboy") { P2([14 + hx, -51 + hy, 50 + hx, -51 + hy, 46 + hx, -55 + hy, 18 + hx, -55 + hy], "#8b5a2b");
+    P2([23 + hx, -55 + hy, 41 + hx, -55 + hy, 39 + hx, -65 + hy, 32 + hx, -62 + hy, 25 + hx, -65 + hy], "#a0522d"); R2(23 + hx, -57 + hy, 41 + hx, -55 + hy, "#5a3a1a"); }
+  else if (acc === "acc_headphones") { P2([18 + hx, -42 + hy, 19 + hx, -54 + hy, 32 + hx, -58 + hy, 45 + hx, -54 + hy, 46 + hx, -42 + hy, 43 + hx, -42 + hy, 42 + hx, -52 + hy, 32 + hx, -55 + hy, 22 + hx, -52 + hy, 21 + hx, -42 + hy], "#222222");
+    R2(16 + hx, -46 + hy, 22 + hx, -36 + hy, "#ff3b6b"); R2(42 + hx, -46 + hy, 48 + hx, -36 + hy, "#ff3b6b"); }
+  else if (acc === "acc_viking") { P2([19 + hx, -50 + hy, 45 + hx, -50 + hy, 42 + hx, -57 + hy, 32 + hx, -60 + hy, 22 + hx, -57 + hy], "#9aa0ab");
+    R2(19 + hx, -52 + hy, 45 + hx, -50 + hy, "#c99700");
+    P2([21 + hx, -54 + hy, 13 + hx, -66 + hy, 18 + hx, -56 + hy], "#f4ecd8"); P2([43 + hx, -54 + hy, 51 + hx, -66 + hy, 46 + hx, -56 + hy], "#f4ecd8"); }
+  else if (acc === "acc_halo") { const bob = Math.sin(tick * 0.08) * 1.5;
+    O(x + (23 + hx) * s, y + (-64 + hy + bob) * s, x + (41 + hx) * s, y + (-58 + hy + bob) * s, null, "#ffd23f", Math.max(1.5, 2.5 * s)); }
+  else if (acc === "acc_shades" && !dead) { if (ducking) R2(46, -27, 60, -22, "#111111"); else { R2(23, -47, 44, -42, "#111111"); R2(20, -46, 23, -45, "#111111"); } }
+  GFX.ol = savedOl;
+}
+// patterned skins: drawn inside the body shape only (clipped)
+function drawSkinPattern(game, x, y, s, kind, ducking, dead, l1, l2) {
+  const g = GFX.g, t = game.tick;
+  const parts = (ducking ? [[0, -26, 46, -8], [40, -30, 60, -14]] :
+    [[4, -34, 30, -12], [20, -50, 44, -32], [30, -28, 36, -24], [-6, -30, 6, -22]]).concat([[8, -12, 13, -l1], [20, -12, 25, -l2]]);
+  const R2 = (x1, y1, x2, y2, c) => R(x + x1 * s, y + y1 * s, x + x2 * s, y + y2 * s, c);
+  const O2 = (cx, cy, r, c) => O(x + (cx - r) * s, y + (cy - r) * s, x + (cx + r) * s, y + (cy + r) * s, c);
+  g.save(); g.beginPath();
+  for (const [a, b, c, d] of parts) g.rect(x + Math.min(a, c) * s, y + Math.min(b, d) * s, Math.abs(c - a) * s, Math.abs(d - b) * s);
+  g.clip();
+  const [hx, hy] = ducking ? [20, 20] : [0, 0];
+  if (kind === "robo") {
+    if (ducking) { R2(0, -18, 40, -16, "#6b7380"); R2(14, -26, 16, -8, "#6b7380"); R2(30, -26, 32, -8, "#6b7380"); R2(4, -22, 26, -12, "#b8c0ca"); }
+    else { R2(4, -24, 30, -22, "#6b7380"); R2(16, -34, 18, -12, "#6b7380"); R2(20, -40, 44, -38, "#6b7380"); R2(7, -21, 15, -14, "#b8c0ca"); }
+    for (const [rx, ry] of ducking ? [[3, -23], [13, -11], [36, -23], [44, -26], [57, -17]] : [[7, -31], [27, -31], [7, -15], [23, -47], [41, -35], [2, -27]])
+      O2(rx, ry, 1.1, "#4a505a");
+    R2(8 + (ducking ? -2 : 0), -12, 13, -10, "#6b7380"); R2(20, -12, 25, -10, "#6b7380");
+  } else {
+    const r = rng(7);
+    for (let i = 0; i < 6; i++) { const nx = -6 + r() * 66, ny = -50 + r() * 50, nr = 6 + r() * 8;
+      O(x + (nx - nr) * s, y + (ny - nr * 0.6) * s, x + (nx + nr) * s, y + (ny + nr * 0.6) * s, ["#3b1f7a", "#1f3a7a", "#5a1f6b"][i % 3]); }
+    for (let i = 0; i < 26; i++) { const sx = -6 + r() * 66, sy = -50 + r() * 50, tw = 0.5 + 0.5 * Math.sin(t * 0.15 + i * 1.7);
+      const c = mix("#1b1440", i % 4 ? "#ffffff" : "#ffe14d", 0.35 + 0.65 * tw), sz = i % 5 ? 0.9 : 1.6;
+      R2(sx, sy, sx + sz, sy + sz, c); }
+  }
+  g.restore();
+  if (kind === "robo" && !dead) {                     // glowing eye and antenna
+    if (ducking) R2(49, -27, 55, -22, "#ff2a2a"); else R2(25, -47, 32, -41, "#ff2a2a");
+    const on = Math.floor(t / 20) % 2;
+    R2(31 + hx, -57 + hy, 33 + hx, -50 + hy, "#6b7380"); O2(32 + hx, -58 + hy, 2, on ? "#ff3b3b" : "#7a1a1a");
+  } else if (kind === "galaxy" && !dead) { if (ducking) R2(50, -26, 53, -23, "#7ff0ff"); else R2(26, -46, 30, -42, "#7ff0ff"); }
+}
+D.outlineFor = g => ({noir: "#000000", gameboy: GB_OUTLINE, sketch: "#2b4a8b"})[GFX.fx] || null;
+D.look = (game, couple = null) => {
+  const sv = game.save;
+  const lk = {acc: sv.acc, hair: HAIR[sv.hair], eyes: EYES[sv.eyes], outfit: sv.outfit};
+  if (couple !== null ? couple : game.coupleOn()) Object.assign(lk, HIM);
+  return lk;
+};
+function drawHeart(cx, cy, r, color = "#ff4f7b") {
+  O(cx - r, cy - r, cx, cy, color); O(cx, cy - r, cx + r, cy, color); P([cx - r, cy - r / 2, cx + r, cy - r / 2, cx, cy + r], color);
+}
+function drawCouple(game, x, y, s, body, bg, o = {}, partner = true) {
+  const look = o.look || D.look(game);
+  if (partner) {
+    const gap = (o.ducking ? 74 : 58) * s, herBody = mix(body, "#ff8fb8", 0.22);
+    drawDinoShape(game, x - gap, y, s, herBody, bg, Object.assign({}, HER, {ducking: o.ducking, legsUp: !o.legsUp, dead: o.dead}));
+    let h = o.ducking ? [x - gap + 58 * s, y - 15 * s, x + 2 * s, y - 15 * s] : [x - gap + 35 * s, y - 25 * s, x + 6 * s, y - 17 * s];
+    L(h, body, Math.max(2, 4 * s)); O((h[0] + h[2]) / 2 - 3 * s, (h[1] + h[3]) / 2 - 3 * s, (h[0] + h[2]) / 2 + 3 * s, (h[1] + h[3]) / 2 + 3 * s, body);
+    if (!o.dead && Math.floor(game.tick / 40) % 3 === 0) drawHeart(x - gap / 2 + 14 * s, y - 66 * s - (game.tick % 40) * 0.5 * s, 5 * s);
+  }
+  drawDinoShape(game, x, y, s, body, bg, Object.assign({}, look, {ducking: o.ducking, legsUp: o.legsUp, dead: o.dead,
+    skinFx: o.skinFx !== undefined ? o.skinFx : SKIN_FX[game.save.skin]}));
+}
+function drawPet(game, x, y, pet, fg, s = 1) {
+  const t = game.tick, bob = Math.sin(t * 0.12) * 4 * s;
+  if (pet === "pet_bird") { const px = x, py = y - 70 * s + bob, flap = Math.floor(t / 6) % 2;
+    O(px - 9 * s, py - 6 * s, px + 9 * s, py + 6 * s, "#ffb84d"); P([px + 8 * s, py - 1 * s, px + 14 * s, py + 1 * s, px + 8 * s, py + 3 * s], "#ff7b29");
+    R(px + 3 * s, py - 3 * s, px + 5 * s, py - 1 * s, "#222222");
+    P(flap ? [px - 4 * s, py - 2 * s, px + 3 * s, py - 2 * s, px - 2 * s, py - 13 * s] : [px - 4 * s, py + 2 * s, px + 3 * s, py + 2 * s, px - 2 * s, py + 11 * s], "#ff9f1a"); }
+  else if (pet === "pet_ghost") { const px = x, py = y - 48 * s + bob;
+    const pts = [px - 11 * s, py + 12 * s]; for (let i = 0; i <= 4; i++) pts.push(px - 11 * s + i * 5.5 * s, py + (i % 2 ? 8 : 13) * s + Math.sin(t * 0.3 + i) * s);
+    pts.push(px + 11 * s, py + 12 * s, px + 11 * s, py - 2 * s);
+    O(px - 11 * s, py - 13 * s, px + 11 * s, py + 9 * s, "#f4f6ff"); P(pts, "#f4f6ff");
+    O(px - 6 * s, py - 6 * s, px - 2 * s, py, "#222244"); O(px + 2 * s, py - 6 * s, px + 6 * s, py, "#222244"); }
+  else if (pet === "pet_babyrex") { const hop = Math.abs(Math.sin(t * 0.18)) * 10 * s;
+    drawDinoShape(game, x - 10 * s, y - hop, 0.45 * s, mix(SKIN_COLOR[game.save.skin] || fg, "#8fd16a", 0.5), game.col("bg"), {legsUp: Math.floor(t / 6) % 2 === 0}); }
+  else if (pet === "pet_drone") { const px = x, py = y - 74 * s + bob * 0.6;
+    R(px - 10 * s, py - 4 * s, px + 10 * s, py + 5 * s, "#6b6f7a"); R(px - 2 * s, py + 5 * s, px + 2 * s, py + 9 * s, "#6b6f7a");
+    O(px - 3 * s, py - 2 * s, px + 3 * s, py + 3 * s, Math.floor(t / 15) % 2 ? "#ff3b3b" : "#5cd65c");
+    const sp = Math.abs(Math.cos(t * 0.9)) * 9 * s;
+    for (const rx of [-12, 12]) { L([px + rx * s, py - 4 * s, px + rx * s, py - 8 * s], "#444444", 1.5); L([px + rx * s - sp, py - 9 * s, px + rx * s + sp, py - 9 * s], "#9aa0ab", 2); } }
+}
+function drawPlayer(game, ox, oy, fg, bg) {
+  const x = game.dinoX + ox, y = game.dinoY + oy;
+  let body = SKIN_COLOR[game.save.skin] || fg;
+  if (GFX.fx === "gameboy") body = fg;
+  const star = game.boostIs("STAR POWER");
+  if (star) body = CONFETTI[Math.floor(game.frame / 4) % CONFETTI.length];
+  if (game.invuln && Math.floor(game.invuln / 4) % 2) return;
+  const s = game.boostIs("TINY DINO") ? 0.55 : 1, running = game.state === "running";
+  const legsUp = (running ? Math.floor(game.frame / 5) : Math.floor(game.tick / 8)) % 2 === 0 && game.onGround() && game.state !== "over";
+  if (game.save.pet !== "pet_none") drawPet(game, x - (game.coupleOn() ? (game.ducking ? 74 : 58) * s + 30 : 30) * s, y, game.save.pet, fg, s);
+  drawCouple(game, x, y, s, body, bg, {ducking: game.ducking, legsUp, dead: game.state === "over", skinFx: star ? null : SKIN_FX[game.save.skin]}, game.coupleOn());
+  if (game.save.shield > 0 && running) O(x - 10 * s, y - 62 * s, x + 62 * s, y + 6 * s, null, "#4db8ff", 2);
+  const rng = game.magnetRange();
+  if (rng && running && Math.floor(game.frame / 30) % 2 === 0) {
+    const cx = x + 25 * s, cy = y - 22 * s, r = 30 + game.frame % 30;
+    O(cx - r, cy - r, cx + r, cy + r, null, mix(game.col("bg"), "#ff5c5c", 0.35), 1);
+  }
+}
+
+// ---------------------------------------------------------------- background
+function drawSynthSun(cx, cy, r) {
+  const bands = 22;
+  for (let i = 0; i < bands; i++) {
+    const y1 = cy - r + 2 * r * i / bands, y2 = y1 + 2 * r / bands;
+    if (i > bands * 0.5 && (i % 3 === 0 || (i > bands * 0.75 && i % 2 === 0))) continue;
+    const dy = (y1 + y2) / 2 - cy, half = Math.sqrt(Math.max(0, r * r - dy * dy));
+    R(cx - half, y1, cx + half, y2 + 0.5, mix("#ffe14d", "#ff2a8a", i / bands));
+  }
+}
+function drawSynthGrid(game, x0, y0, x1, y1, fg) {
+  const col = mix(game.col("bg"), fg, 0.7), vx = (x0 + x1) / 2, h = y1 - y0;
+  for (let k = -12; k <= 12; k++) L([vx + k * 18, y0, vx + k * 110, y1], col, 1);
+  const off = game.groundOff / 40;
+  for (let k = 0; k < 6; k++) { const t = Math.pow((k + off) / 6, 2); L([x0, y0 + h * t, x1, y0 + h * t], col, 1); }
+}
+function groundColor(game) {                                   // the floor below the track
+  const d = game.land().decor, bg = game.col("bg");
+  return d === "deepsea" ? mix(bg, "#c9b27c", 0.5) : d === "moon" ? mix(bg, "#7d8291", 0.35) : bg;
+}
+function drawBackground(game, bg, fg) {
+  const land = game.land(), decor = land.decor, n = game.nightT, hill = game.col("hill"), cloud = game.col("cloud");
+  R(0, 0, W, H, bg);
+  if ((n > 0.05 || decor === "moon" || decor === "haunted") && !["synth", "deepsea"].includes(decor)) {
+    for (const [sx, sy, sz] of game.stars) R(sx, sy, sx + sz, sy + sz, mix(bg, "#ffffff", n * 0.8));
+    O(W - 140, 30, W - 104, 66, mix(bg, "#f4f1d0", n));
+    if (decor === "craters") O(W - 220, 50, W - 204, 66, mix(bg, "#e8c9a8", n));
+  } else if (!["synth", "deepsea"].includes(decor)) {
+    O(W - 140, 36, W - 104, 72, decor === "craters" ? "#ff9f6b" : "#ffe9a3");
+  }
+  if (decor === "synth") drawSynthSun(W - 230, GROUND - 25, 85);
+  if (decor === "deepsea") {                                   // light rays and rising bubbles
+    for (let i = 0; i < 5; i++) { const rx = 120 + i * 170 + Math.sin(game.tick * 0.01 + i) * 20;
+      P([rx, 0, rx + 40, 0, rx + 110, GROUND, rx + 20, GROUND], mix(bg, "#ffffff", 0.06 * (1 - n * 0.6))); }
+    for (let i = 0; i < 14; i++) { const bx = (i * 67) % W, by = GROUND - ((game.tick * (0.6 + (i % 4) * 0.2) + i * 41) % GROUND), r = 2 + i % 3;
+      O(bx - r, by - r, bx + r, by + r, null, mix(bg, "#ffffff", 0.5), 1); }
+  }
+  if (decor === "haunted") { O(W - 190, 22, W - 110, 102, "#f4f1d0"); O(W - 175, 30, W - 150, 50, "#e2dcb0"); }
+  if (decor === "moon") { O(W - 200, 30, W - 140, 90, "#2f6fd6"); P([W - 190, 50, W - 175, 40, W - 160, 52, W - 172, 66], "#3cb043"); O(W - 152, 62, W - 144, 74, "#3cb043"); }
+  if (decor === "sketch") { const rule = mix(bg, "#7fa7d9", 0.45);
+    for (let y = 36; y < GROUND; y += 22) L([0, y, W, y], rule, 1); L([48, 0, 48, H], "#e88b8b", 2); }
+  if (!["deepsea", "moon"].includes(decor))
+    for (const [cx, cy] of game.clouds) { O(cx - 26, cy - 8, cx + 26, cy + 8, cloud); O(cx - 12, cy - 15, cx + 14, cy + 3, cloud); }
+  for (const h of game.hills) {
+    if (decor === "synth") {
+      const top = [h.x + h.w * 0.5, GROUND - h.h * 1.5];
+      P([h.x, GROUND, ...top, h.x + h.w, GROUND], hill, fg, 2);
+      L([h.x + h.w * 0.25, GROUND, ...top], mix(hill, fg, 0.5), 1); L([h.x + h.w * 0.75, GROUND, ...top], mix(hill, fg, 0.5), 1);
+      continue;
+    }
+    HALF(h.x, GROUND - h.h, h.x + h.w, GROUND + h.h, hill, decor === "sketch" ? fg : null, 1.5);
+    if (decor === "trees") for (const t of [0.3, 0.6]) { const tx = h.x + h.w * t, ty = GROUND - h.h * Math.sin(Math.PI * t) * 0.95;
+      P([tx - 9, ty + 4, tx + 9, ty + 4, tx, ty - 24], mix(hill, "#1f5a2a", 0.6)); }
+    if (decor === "deepsea") for (const t of [0.25, 0.5, 0.75]) { const tx = h.x + h.w * t, ty = GROUND - h.h * Math.sin(Math.PI * t) * 0.9, sw = Math.sin(game.tick * 0.05 + tx) * 5;
+      L([tx, ty + 4, tx + sw, ty - 14, tx - sw * 0.5, ty - 28], "#2e8b57", 3); }
+    if (decor === "haunted") { const gx = h.x + h.w * 0.45, gy = GROUND - h.h * 0.92;
+      R(gx - 2, gy - 34, gx + 2, gy, "#0a0610"); L([gx, gy - 24, gx - 14, gy - 34], "#0a0610", 2); L([gx, gy - 18, gx + 12, gy - 30], "#0a0610", 2);
+      R(h.x + h.w * 0.7 - 5, GROUND - h.h * 0.6 - 12, h.x + h.w * 0.7 + 5, GROUND - h.h * 0.6, "#3a2f48"); }
+    if (decor === "moon") { O(h.x + h.w * 0.3, GROUND - h.h * 0.55, h.x + h.w * 0.3 + 24, GROUND - h.h * 0.55 + 7, mix(hill, "#000000", 0.25));
+      O(h.x + h.w * 0.62, GROUND - h.h * 0.35, h.x + h.w * 0.62 + 14, GROUND - h.h * 0.35 + 5, mix(hill, "#000000", 0.25)); }
+    if (decor === "craters") O(h.x + h.w * 0.4, GROUND - h.h * 0.5, h.x + h.w * 0.4 + 26, GROUND - h.h * 0.5 + 8, mix(hill, "#000000", 0.18));
+  }
+  R(0, GROUND, W, H, groundColor(game));
+  if (decor === "synth") drawSynthGrid(game, 0, GROUND, W, H, fg);
+  if (decor === "snow") { const flake = mix("#9fb3c8", "#ffffff", n);
+    for (let i = 0; i < 30; i++) { const fx = (i * 97 + game.tick * (0.6 + (i % 3) * 0.3)) % W, fy = (i * 53 + game.tick * (0.8 + (i % 4) * 0.25)) % GROUND;
+      R(W - fx, fy, W - fx + 2, fy + 2, flake); } }
+  L([0, GROUND, W, GROUND], fg, 1.5);
+  for (let x = -game.groundOff; x < W; x += 40) L([x + 10, GROUND + 7, x + 18, GROUND + 7], fg, 1);
+}
+
+// ---------------------------------------------------------------- obstacles
+function drawObstacle(game, ob, ox, oy, fg) {
+  const x = ob.x + ox, y = ob.y + oy, w = ob.w, h = ob.h, k = ob.kind;
+  if (k === "cactus" && ob.look) {
+    const cw = ob.cw;
+    for (let i = 0; i < ob.n; i++) {
+      const cx = x + i * (cw + 4);
+      if (ob.look === "crab") {
+        const step = Math.floor(game.frame / 4 + i) % 2 ? 2 : -2;
+        for (const lx of [3, 9, 17, 23]) L([cx + lx, y - 6, cx + lx + step, y], "#c0392b", 2);
+        O(cx, y - h, cx + cw, y - 4, "#e74c3c");
+        O(cx - 6, y - h - 6, cx + 4, y - h + 3, "#e74c3c"); O(cx + cw - 4, y - h - 6, cx + cw + 6, y - h + 3, "#e74c3c");
+        R(cx + 8, y - h - 5, cx + 10, y - h, "#222222"); R(cx + 16, y - h - 5, cx + 18, y - h, "#222222");
+      } else if (ob.look === "tomb") {
+        P([cx, y, cx, y - h + 8, cx + 3, y - h + 2, cx + cw / 2, y - h, cx + cw - 3, y - h + 2, cx + cw, y - h + 8, cx + cw, y], "#8a8399");
+        R(cx + cw / 2 - 1.5, y - h + 6, cx + cw / 2 + 1.5, y - h + 18, "#4a4458"); R(cx + cw / 2 - 5, y - h + 10, cx + cw / 2 + 5, y - h + 13, "#4a4458");
+        R(cx - 2, y - 3, cx + cw + 2, y, "#4a3a2a");
+      } else {                                                 // moon rock
+        P([cx, y, cx + 2, y - h * 0.6, cx + cw * 0.35, y - h, cx + cw * 0.75, y - h * 0.85, cx + cw, y - h * 0.4, cx + cw, y], "#9aa0ab", "#6b6f7a", 1.5);
+        O(cx + cw * 0.3, y - h * 0.55, cx + cw * 0.55, y - h * 0.4, "#6b6f7a");
+      }
+    }
+  } else if (k === "cactus") {
+    const cw = ob.cw;
+    for (let i = 0; i < ob.n; i++) {
+      const cx = x + i * (cw + 4), mid = cx + cw / 2, tw = cw * 0.45;
+      R(mid - tw / 2, y - h, mid + tw / 2, y, fg);
+      R(cx, y - h * 0.65, cx + tw * 0.6, y - h * 0.35, fg); R(cx, y - h * 0.65, mid, y - h * 0.55, fg);
+      R(cx + cw - tw * 0.6, y - h * 0.8, cx + cw, y - h * 0.5, fg); R(mid, y - h * 0.6, cx + cw, y - h * 0.5, fg);
+    }
+  } else if (k === "bird" && ob.look === "jelly") {
+    const pulse = Math.sin(game.frame * 0.2) * 2;
+    HALF(x + 6, y - h - pulse, x + 36, y - h + 22 + pulse, "#ff8fd0"); R(x + 6, y - h + 10, x + 36, y - h + 12, "#ff8fd0");
+    for (let i = 0; i < 5; i++) { const tx = x + 9 + i * 6; L([tx, y - h + 12, tx + Math.sin(game.frame * 0.25 + i) * 3, y + 2], "#ffb3e2", 2); }
+    O(x + 14, y - h + 3, x + 18, y - h + 7, "#ffffff");
+  } else if (k === "bird" && ob.look === "bat") {
+    const flap = Math.floor(game.frame / 5) % 2, cy = y - 13;
+    O(x + 14, cy - 6, x + 28, cy + 6, "#1a1022");
+    P(flap ? [x + 16, cy, x, cy - 12, x + 6, cy + 2] : [x + 16, cy, x, cy + 8, x + 6, cy - 2], "#1a1022");
+    P(flap ? [x + 26, cy, x + 42, cy - 12, x + 36, cy + 2] : [x + 26, cy, x + 42, cy + 8, x + 36, cy - 2], "#1a1022");
+    R(x + 17, cy - 2, x + 19, cy, "#ff3b3b"); R(x + 23, cy - 2, x + 25, cy, "#ff3b3b");
+  } else if (k === "bird" && ob.look === "satellite") {
+    const cy = y - 13;
+    R(x, cy - 5, x + 12, cy + 5, "#2f5fbf", "#9aa0ab", 1); R(x + 30, cy - 5, x + 42, cy + 5, "#2f5fbf", "#9aa0ab", 1);
+    L([x + 12, cy, x + 30, cy], "#9aa0ab", 2); R(x + 15, cy - 7, x + 27, cy + 7, "#d9dde5");
+    L([x + 21, cy - 7, x + 21, cy - 13], "#9aa0ab", 1.5); O(x + 19, cy - 16, x + 23, cy - 12, Math.floor(game.frame / 15) % 2 ? "#ff3b3b" : "#9aa0ab");
+  } else if (k === "puffer") {
+    const r = h / 2, cx = x + w / 2, cy = y - r, gr = ob.grow;
+    O(cx - r, cy - r, cx + r, cy + r, mix("#ffd23f", "#ffb84d", gr));
+    if (gr > 0.2) for (let i = 0; i < 10; i++) { const a = i * Math.PI / 5; L([cx + r * Math.cos(a), cy + r * Math.sin(a), cx + (r + 5 * gr) * Math.cos(a), cy + (r + 5 * gr) * Math.sin(a)], "#c99700", 1.5); }
+    O(cx - r * 0.55, cy - r * 0.4, cx - r * 0.15, cy, "#ffffff"); O(cx - r * 0.45, cy - r * 0.3, cx - r * 0.25, cy - r * 0.1, "#222222");
+    P([cx + r * 0.8, cy, cx + r + 8, cy - 7, cx + r + 8, cy + 7], "#ffb84d");
+  } else if (k === "ghost") {
+    const solid = Game.ghostSolid(ob), fade = solid ? 1 : 0.25, c = mix(game.col("bg"), "#f4f6ff", 0.25 + 0.75 * fade);
+    const cx = x + w / 2, top = y - h;
+    const pts = [x, y - 4]; for (let i = 0; i <= 4; i++) pts.push(x + i * w / 4, y - (i % 2 ? 8 : 0) + Math.sin(ob.t * 0.3 + i) * 2);
+    pts.push(x + w, y - 4, x + w, top + 14);
+    O(x, top, x + w, top + 28, c); P(pts, c);
+    if (solid) { O(cx - 9, top + 9, cx - 3, top + 16, "#222244"); O(cx + 3, top + 9, cx + 9, top + 16, "#222244"); O(cx - 3, top + 19, cx + 3, top + 24, "#222244"); }
+  } else if (k === "rover") {
+    R(x + 4, y - h + 6, x + w - 4, y - 8, "#d9dde5", "#6b6f7a", 1.5); R(x + 8, y - h, x + 22, y - h + 6, "#9aa0ab");
+    for (const wx of [x + 8, x + w / 2, x + w - 8]) O(wx - 5, y - 10, wx + 5, y, "#444444");
+    L([x + w - 10, y - h + 6, x + w - 6, y - h - 8], "#9aa0ab", 1.5); O(x + w - 9, y - h - 12, x + w - 3, y - h - 6, Math.floor(game.frame / 10) % 2 ? "#ff3b3b" : "#5cd65c");
+  } else if (k === "tentacle") {
+    if (ob.warn > 0) { if (Math.floor(game.frame / 5) % 2 === 0) { O(x - 4, GROUND - 4, x + 26, GROUND + 4, "#bfe9ff"); T(x + 11, GROUND - 20, "!", "#ff3b3b", 16, true); } }
+    else if (ob.up > 0) {
+      const sway = Math.sin(game.frame * 0.2) * 4;
+      P([x, y, x + 4 + sway, y - ob.up * 0.6, x + 9 + sway * 1.5, y - ob.up, x + 15 + sway, y - ob.up + 4, x + 20, y - ob.up * 0.5, x + 22, y], "#8e44ad");
+      for (let i = 1; i < 4; i++) O(x + 7 + sway * i / 4, y - ob.up * i / 4 - 2, x + 12 + sway * i / 4, y - ob.up * i / 4 + 3, "#e0b3f0");
+    }
+  } else if (k === "bird" || k === "swoop") {
+    const color = k === "bird" ? fg : "#c0392b", flap = Math.floor(game.frame / 8) % 2;
+    R(x + 8, y - 16, x + 36, y - 8, color); P([x, y - 14, x + 10, y - 18, x + 10, y - 10], color);
+    if (flap) P([x + 16, y - 16, x + 28, y - 16, x + 22, y - 28], color); else P([x + 16, y - 8, x + 28, y - 8, x + 22, y], color);
+  } else if (k === "meteor") {
+    const sx = ob.tx + ox; L([sx, GROUND - 2, sx + 22, GROUND - 2], "#ff5c5c", 3);
+    ["#ffcf3f", "#ff9f1a", "#ff7b29", "#ff5c5c"].forEach((c, i) => O(x + 10 + i * 9, y - h - i * 7, x + 26 + i * 9, y - h + 12 - i * 7, c));
+    O(x, y - h, x + w, y, "#7a5c48");
+  } else if (k === "rock") O(x, y - h, x + w, y + 2, "#7a5c48");
+  else if (k === "bolt" && ob.look === "beam") {             // alien tractor beam
+    if (ob.warn > 0) { if (Math.floor(game.frame / 5) % 2 === 0) { L([x + 9, 0, x + 9, GROUND], "#5cd65c", 2); T(x + 9, GROUND - 46, "!", "#ff3b3b", 16, true); } }
+    else if (ob.active > 0) { P([x - 6, 0, x + 24, 0, x + 34, GROUND, x - 16, GROUND], mix(game.col("bg"), "#5cd65c", 0.55));
+      for (let i = 0; i < 5; i++) { const yy = (game.frame * 6 + i * 50) % GROUND; L([x - 4, yy, x + 22, yy], "#b6ffb6", 1.5); } }
+  }
+  else if (k === "bolt") {
+    if (ob.warn > 0) { if (Math.floor(game.frame / 5) % 2 === 0) { L([x + 9, 0, x + 9, GROUND], "#ffe14d", 2); T(x + 9, GROUND - 46, "!", "#ff3b3b", 16, true); } }
+    else if (ob.active > 0) { P([x + 6, 0, x + 16, 0, x + 10, GROUND * 0.5, x + 18, GROUND * 0.5, x + 4, GROUND, x + 8, GROUND * 0.55, x, GROUND * 0.55], "#fff7a8");
+      O(x - 6, GROUND - 10, x + 26, GROUND + 4, "#ffe14d"); }
+  } else if (k === "fireball" && ob.look) {
+    const c = {ink: ["#2a1240", "#5a2a80", "#140a20"], pumpkin: ["#ff7b1a", "#ffb84d", "#3a6b1f"], plasma: ["#5cd65c", "#b6ffb6", "#ffffff"]}[ob.look];
+    O(x + 14, y - h + 4, x + w + 16, y - 4, mix(game.col("bg"), c[1], 0.55));
+    O(x, y - h, x + 24, y, c[0]);
+    if (ob.look === "pumpkin") { R(x + 10, y - h - 4, x + 13, y - h + 1, c[2]); P([x + 6, y - h + 7, x + 10, y - h + 11, x + 6, y - h + 11], "#ffe14d"); P([x + 14, y - h + 7, x + 18, y - h + 11, x + 14, y - h + 11], "#ffe14d"); }
+    else O(x + 5, y - h + 4, x + 13, y - h + 11, c[2]);
+  } else if (k === "fireball") {
+    O(x + 14, y - h + 3, x + w + 14, y - 3, "#ff9f1a"); O(x + 24, y - h + 6, x + w + 26, y - 6, "#ff5c5c");
+    O(x, y - h, x + 22, y, "#ffe14d"); O(x + 3, y - h + 4, x + 15, y - 4, "#ffffff");
+  } else if (k === "wormhump") {
+    for (let i = 0; i < 8; i++) { const a = Math.PI * (i + 0.5) / 8;
+      wormSegment(game, x + w / 2 - (w / 2 - 10) * Math.cos(a), GROUND + oy + 4 - (h - 8) * Math.sin(a), 12, i); }
+    O(x - 6, y - 5, x + 20, y + 4, "#e3c497"); O(x + w - 20, y - 5, x + w + 6, y + 4, "#e3c497");
+  } else if (k === "wormneck") {
+    const ly = ob.ly + oy;
+    if (ob.stage === "wind") T(W / 2, ly, `<<<  ${ob.lane === "mid" ? "DUCK!" : "STAY DOWN!"}  <<<`, Math.floor(ob.t / 6) % 2 ? "#ff9f9f" : "#ff3b3b", 14, true);
+    else { let xx = ob.end + ox, i = 0; while (xx > ob.head + ox + 14) { wormSegment(game, xx, ly + 2 * Math.sin(xx * 0.05), 13, i++); xx -= 20; }
+      wormHead(game, ob.head + ox, ly, 17, -1); }
+  }
+}
+function wormColors(game) {
+  const b = game.boss;
+  if (b && b.hit % 4 >= 2) return ["#ffffff", "#c9c9c9"];
+  if (b && b.rage && Math.floor(b.rage / 6) % 2) return ["#ff6b4a", "#a83218"];
+  return ["#c49a6c", "#8a5a36"];
+}
+function wormSegment(game, x, y, r, i) {
+  const [body, ring] = wormColors(game); O(x - r, y - r, x + r, y + r, body, ring, 2);
+  if (i % 2 === 0) L([x - r * 0.5, y - r * 0.8, x - r * 0.5, y + r * 0.8], ring, 2);
+}
+function wormHead(game, x, y, r, face) {
+  const [body, ring] = wormColors(game); O(x - r, y - r, x + r, y + r, body, ring, 2);
+  const mx = x + face * r * 0.5; O(mx - r * 0.5, y - r * 0.65, mx + r * 0.5, y + r * 0.65, "#3a1f12");
+  const t = game.frame * 0.1;
+  for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 + t, tx = mx + r * 0.45 * Math.cos(a), ty = y + r * 0.6 * Math.sin(a);
+    P([tx, ty, tx + (mx - tx) * 0.5 - 2, ty + (y - ty) * 0.5, tx + (mx - tx) * 0.5 + 2, ty + (y - ty) * 0.5], "#f4ecd8"); }
+  O(x - face * r * 0.1 - 3, y - r * 0.9, x - face * r * 0.1 + 3, y - r * 0.9 + 6, "#ff2a2a");
+}
+function drawWormBoss(game, b, fg) {
+  const hx = b.x, hy = b.y, bx = b.x + 55, by = GROUND + 30;
+  const neck = game.obstacles.some(o => o.kind === "wormneck" && o.stage !== "wind");
+  for (let i = 0; i < 14; i++) {
+    const t = i / 13, cx = b.x + 95, cy = (hy + GROUND) / 2;
+    let x = (1 - t) ** 2 * bx + 2 * (1 - t) * t * cx + t * t * hx, y = (1 - t) ** 2 * by + 2 * (1 - t) * t * cy + t * t * hy;
+    x += 4 * Math.sin(game.frame * 0.08 + i * 0.6) * t; const r = 22 - 6 * t;
+    if (y - r * 0.3 < GROUND) wormSegment(game, x, y, r, i);
+  }
+  if (!neck && hy < GROUND + 5) wormHead(game, hx, hy, 20, -1);
+  R(bx - 70, GROUND + 1, bx + 60, H, game.col("bg")); L([bx - 70, GROUND, bx + 60, GROUND], fg, 1.5);
+  O(bx - 55, GROUND - 12, bx + 45, GROUND + 10, "#e3c497"); O(bx - 30, GROUND - 18, bx + 20, GROUND + 2, "#d9b483");
+}
+function drawWorldBoss(game, b, c) {
+  const x = b.x, y = b.y, t = b.t;
+  if (b.name === "KRAKEN") {
+    for (let i = 0; i < 6; i++) {                              // tentacles
+      const bx = x - 50 + i * 22, pts = [];
+      for (let k = 0; k <= 8; k++) pts.push(bx + Math.sin(t * 0.08 + i + k * 0.6) * (4 + k * 1.5), y + 20 + k * 11);
+      L(pts, mix(c, "#000000", 0.15), 9 - i % 2 * 2);
+    }
+    O(x - 60, y - 50, x + 60, y + 35, c); O(x - 40, y - 45, x + 20, y - 5, mix(c, "#ffffff", 0.15));
+    for (const ex of [-25, 15]) { O(x + ex - 10, y - 10, x + ex + 10, y + 10, "#ffe14d"); R(x + ex - 2, y - 7, x + ex + 2, y + 7, "#111111"); }
+  } else if (b.name === "PUMPKIN KING") {
+    const bob = Math.sin(t * 0.1) * 3;
+    for (const [dx, w] of [[-50, 40], [-20, 50], [15, 40]]) O(x + dx - 6, y - 40 + bob, x + dx + w, y + 40 + bob, c, mix(c, "#000000", 0.3), 2);
+    R(x - 6, y - 56 + bob, x + 6, y - 40 + bob, "#3a6b1f");
+    P([x - 34, y - 56 + bob, x + 34, y - 56 + bob, x + 34, y - 74 + bob, x + 17, y - 62 + bob, x, y - 78 + bob, x - 17, y - 62 + bob, x - 34, y - 74 + bob], "#ffcc00");
+    const glow = Math.floor(t / 8) % 2 ? "#ffe14d" : "#fff7a8";
+    P([x - 34, y - 14 + bob, x - 18, y - 26 + bob, x - 12, y - 10 + bob], glow); P([x + 4, y - 10 + bob, x + 10, y - 26 + bob, x + 26, y - 14 + bob], glow);
+    P([x - 36, y + 6 + bob, x + 36, y + 6 + bob, x + 26, y + 24 + bob, x + 12, y + 16 + bob, x, y + 26 + bob, x - 12, y + 16 + bob, x - 26, y + 24 + bob], glow);
+  } else {                                                     // ALIEN MOTHERSHIP
+    const lights = Math.floor(t / 6);
+    O(x - 90, y - 10, x + 90, y + 24, "#9aa0ab", "#6b6f7a", 2); O(x - 70, y - 2, x + 70, y + 30, "#7d8291");
+    O(x - 38, y - 42, x + 38, y + 4, mix("#bfe9ff", c, 0.2));
+    O(x - 12, y - 32, x + 12, y - 6, c); O(x - 8, y - 26, x - 2, y - 18, "#111111"); O(x + 2, y - 26, x + 8, y - 18, "#111111");
+    for (let i = -4; i <= 4; i++) O(x + i * 18 - 4, y + 8, x + i * 18 + 4, y + 16, (lights + i) % 3 ? "#ffe14d" : c);
+  }
+}
+function drawFlyingBoss(game, b, fg) {
+  const x = b.x, y = b.y, flash = b.hit % 4 >= 2;
+  let c = flash ? "#ffffff" : b.color;
+  if (!flash && b.rage && Math.floor(b.rage / 6) % 2) c = "#ff3b3b";
+  if (["KRAKEN", "PUMPKIN KING", "ALIEN MOTHERSHIP"].includes(b.name)) return drawWorldBoss(game, b, c);
+  const flap = Math.sin(b.t * 0.15) * 18, dark = mix(c, "#000000", 0.35);
+  P([x - 10, y - 5, x + 50, y - 10, x + 30 - flap, y - 60 - flap], dark);           // back wing
+  O(x - 60, y - 25, x + 60, y + 25, c);                                                // body
+  P([x - 60, y - 6, x - 100, y + 4, x - 60, y + 12], mix(c, "#ffcf3f", 0.5));          // beak
+  O(x - 48, y - 14, x - 32, y + 2, "#ffffff"); O(x - 44, y - 10, x - 36, y - 2, "#ff2a2a");
+  P([x + 55, y - 5, x + 95, y - 20, x + 90, y + 5], dark);                              // tail
+  P([x - 20, y - 5, x + 40, y - 8, x + 15 + flap, y - 65 - flap], c, dark, 2);          // front wing
+  if (b.name === "CACTUS KING") { P([x - 30, y - 22, x + 10, y - 22, x + 10, y - 40, x, y - 30, x - 10, y - 44, x - 20, y - 30, x - 30, y - 40], "#ffcc00");
+    for (let i = -40; i < 50; i += 18) L([x + i, y - 10, x + i + 4, y - 16], "#1f4f1f", 2); }
+  if (b.name === "STORM DRAGON" && b.t % 40 < 8) L([x + 20, y - 40, x + 10, y - 20, x + 24, y - 18, x + 8, y + 6], "#fff7a8", 3);
+  if (b.name === "MECHA-PTERO") { R(x - 10, y - 4, x + 30, y + 4, "#9aa0ab"); O(x + 34, y - 6, x + 46, y + 6, "#ff5c5c"); }
+  if (b.name === "LAVA BAT") for (let i = 0; i < 3; i++) O(x - 30 + i * 25, y + 18, x - 22 + i * 25, y + 26 + (b.t + i * 7) % 12, "#ff9f1a");
+}
+function drawBoss(game, fg) {
+  const b = game.boss; if (!b) return;
+  if (b.phase === "warning") {
+    const secs = Math.ceil(b.warn / 60), on = Math.floor(b.warn / 15) % 2 === 0;
+    T(W / 2, 92, "!  W A R N I N G  !", on ? "#ff3b3b" : "#ff9f9f", 26, true);
+    T(W / 2, 128, `BOSS APPROACHING: ${b.name}`, fg, 16, true);
+    T(W / 2, 152, `ready in ${secs}...`, fg, 14, true);
+    T(W / 2, 176, b.worm ? "humps: JUMP   body in the middle: DUCK   body up high: STAY DOWN   grab the stars"
+      : "low fireball: JUMP   middle: DUCK   high: STAY DOWN   grab the stars to shoot back", fg, 11);
+    return;
+  }
+  if (b.phase === "rumble" || b.phase === "emerge") {
+    if (b.phase === "emerge") drawWormBoss(game, b, fg);
+    T(W / 2, 80, b.phase === "rumble" ? "THE GROUND IS SHAKING..." : "S A N D W O R M", Math.floor(b.t / 10) % 2 ? "#8a5a36" : "#c49a6c", 22, true);
+    return;
+  }
+  b.worm ? drawWormBoss(game, b, fg) : drawFlyingBoss(game, b, fg);
+  const bw = 300, x0 = W / 2 - bw / 2, y0 = 274;
+  R(x0, y0, x0 + bw, y0 + 10, null, fg, 1);
+  R(x0, y0, x0 + bw * Math.max(0, b.hp) / b.maxhp, y0 + 10, b.rage ? "#ff3b3b" : "#e74c3c");
+  T(W / 2, y0 - 9, `${b.name}  ${Math.max(0, b.hp)}/${b.maxhp}`, fg, 11, true);
+}
+function drawStar(cx, cy, r, color, inner = 0.45) {
+  const pts = []; for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? r * inner : r; pts.push(cx + rr * Math.cos(a), cy + rr * Math.sin(a)); }
+  P(pts, color);
+}
+
+// =====================================================================
+//  SCREENS: the run / menu / game-over scene, shops, mine, motivation
+//  Clickable things register a "hit" box (game units) while being drawn.
+// =====================================================================
+function hit(game, x1, y1, x2, y2, action, hover = null) { game.hits.push({x1, y1, x2, y2, action, hover}); }
+
+function drawTopHud(game, fg) {
+  const bg = game.col("bg");
+  T(W - 20, 18, `HI ${String(game.save.high).padStart(5, "0")}  ${String(game.score).padStart(5, "0")}`, fg, 16, true, "right");
+  T(W - 20, 40, `coins ${game.save.coins}   diamonds ${game.save.diamonds}`, GFX.fx === "gameboy" ? fg : game.coinCol(),
+    13 + (game.coinPulse || 0) * 0.25, true, "right");
+  if (game.state !== "running") return;
+  const [x1, y1, x2, y2] = [W / 2 - 15, 8, W / 2 + 15, 36];
+  R(x1, y1, x2, y2, mix(bg, fg, 0.08), fg, 2);
+  if (game.paused) P([x1 + 10, y1 + 7, x1 + 10, y2 - 7, x2 - 8, (y1 + y2) / 2], fg);
+  else { R(x1 + 9, y1 + 7, x1 + 13, y2 - 7, fg); R(x2 - 13, y1 + 7, x2 - 9, y2 - 7, fg); }
+  T(x2 + 8, (y1 + y2) / 2, "Esc", mix(bg, fg, 0.5), 9, false, "left");
+  hit(game, x1 - 4, y1 + game.hudDy - 4, x2 + 4, y2 + game.hudDy + 4, () => game.setPause(!game.paused));
+  let info = `LVL ${game.level}`; if (game.combo >= 5) info += `   combo ${game.combo}`;
+  T(20, 16, info, fg, 13, true, "left");
+  const items = [];
+  if (game.save.shield) items.push(`shield x${game.save.shield}`);
+  if (game.save.slowmo) items.push(`slow-mo x${game.save.slowmo} [X]`);
+  if (game.save.doublejump) items.push("2x jump " + (game.djCool <= 0 ? "ready" : (game.djCool / 60).toFixed(1) + "s"));
+  if (items.length) T(20, 34, items.join("   "), fg, 11, false, "left");
+  if (game.boost) { const [name, left, color] = game.boost; T(20, 52, name, color, 12, true, "left");
+    R(170, 47, 290, 57, null, fg, 1); R(170, 47, 170 + 120 * left / (game.boost[3] || BOOST_TIME), 57, color); }
+  if (game.event && game.event[1] > 1) T(20, 70, game.event[0], "#b366ff", 11, true, "left");
+}
+function hudInBar(game) { return barsVisible() && GFX.oy / GFX.f >= 80 && ["running", "over", "menu"].includes(game.state); }
+
+function drawScene(game) {
+  const bg = game.col("bg"), fg = game.col("fg");
+  let ox = game.shake ? randint(-5, 5) : 0, oy = game.shake ? randint(-4, 4) : 0;
+  if (game.deco && game.deco.worm && barsVisible()) { ox += choice([-1, 0, 1]); oy += choice([-1, 0, 0, 1]); }
+  drawBackground(game, bg, fg);
+  if (game.state === "running" && (game.speed > 15 || game.eventIs("SPEED RUSH")) && !game.paused) {      // speed lines
+    const n = game.eventIs("SPEED RUSH") ? 10 : Math.floor((game.speed - 14) * 1.2);
+    for (let i = 0; i < n; i++) { const y = 40 + (i * 61) % 200, len = 40 + (i * 37) % 80, x = W - ((game.frame * (18 + i % 5) + i * 173) % (W + 200));
+      L([x, y, x + len, y], mix(bg, fg, 0.18), 1.5); }
+  }
+  if (game.slowmo && !barsVisible()) R(2, 2, W - 2, H - 2, null, "#4db8ff", 6);
+  if (game.boost && !barsVisible()) R(2, 2, W - 2, H - 2, null, game.boost[2], 4);
+  const cc = game.coinCol();
+  for (const c of game.coins) {
+    if (c.gem) { const gx = c.x + ox, gy = c.y + oy;
+      P([gx - 14, gy - 4, gx - 7, gy - 13, gx + 7, gy - 13, gx + 14, gy - 4, gx, gy + 14], "#5ce1ff", "#ffffff", 2); continue; }
+    const Rr = c.big ? 14 : 8, r = Rr * Math.abs(Math.cos(c.phase)) + 2;
+    O(c.x - r + ox, c.y - Rr + oy, c.x + r + ox, c.y + Rr + oy, cc, fg, c.big ? 2 : 1);
+  }
+  GFX.ol = D.outlineFor(game);
+  for (const ob of game.obstacles) drawObstacle(game, ob, ox, oy, fg);
+  if (game.ufo) { const u = game.ufo;
+    O(u.x - 34, u.y - 6, u.x + 34, u.y + 10, "#9aa0ab"); O(u.x - 16, u.y - 18, u.x + 16, u.y + 2, "#bfe9ff");
+    for (let i = -2; i <= 2; i++) O(u.x + i * 12 - 3, u.y + 1, u.x + i * 12 + 3, u.y + 7, (Math.floor(game.frame / 6) + i) % 2 ? "#ffe14d" : "#5cd65c");
+    if (u.phase === "hover") P([u.x - 12, u.y + 10, u.x + 12, u.y + 10, u.x + 30, GROUND, u.x - 30, GROUND], mix(bg, "#5cd65c", 0.25)); }
+  if (game.orb) { const o = game.orb, pulse = 3 * Math.sin(o.t * 0.3);
+    O(o.x - 14 - pulse, o.y - 14 - pulse, o.x + 14 + pulse, o.y + 14 + pulse, mix(bg, "#b366ff", 0.4));
+    O(o.x - 10, o.y - 10, o.x + 10, o.y + 10, "#b366ff", "#ffffff", 2); T(o.x, o.y + 1, "?", "#ffffff", 13, true); }
+  drawBoss(game, fg);
+  GFX.ol = null;
+  for (const sp of game.sparks) { const r = 13 + 3 * Math.sin(sp.t * 0.3);
+    O(sp.x - r - 6, sp.y - r - 6, sp.x + r + 6, sp.y + r + 6, mix(bg, "#ffe14d", 0.35)); drawStar(sp.x, sp.y, r, "#ffe14d"); drawStar(sp.x, sp.y, r * 0.5, "#ffffff"); }
+  for (const sh of game.shots) drawStar(sh.x, sh.y, 8, "#ffe14d");
+  drawPlayer(game, ox, oy, fg, bg);
+  for (const p of game.particles) drawParticle(p, fg);
+  for (const t of game.popups) T(t.x, t.y, t.text, t.color || fg, t.size, true);
+  if (game.land().decor === "noir") drawNoirOverlay(game);
+  if (game.state === "running" && game.dinoY - 50 < 0 && !barsVisible()) {
+    const ax = game.dinoX + 25; P([ax - 7, 14, ax + 7, 14, ax, 3], fg); T(ax, 22, Math.floor(50 - game.dinoY), fg, 8, true);
+  }
+  if (!hudInBar(game)) drawTopHud(game, fg);
+  drawSceneText(game, bg, fg);
+}
+function drawParticle(p, fg) {
+  const c = p.color || fg, s = p.size;
+  if (p.shape === "heart") drawHeart(p.x, p.y, s, c);
+  else if (p.shape === "bubble") O(p.x - s, p.y - s, p.x + s, p.y + s, null, c, 1.5);
+  else if (p.shape === "star") drawStar(p.x, p.y, s, c);
+  else R(p.x, p.y, p.x + s, p.y + s, c);
+}
+function drawNoirOverlay(game) {
+  const r = rng(Math.floor(game.tick / 2) + 1);
+  for (let i = 0; i < 70; i++) { const x = r() * W, y = r() * H; R(x, y, x + 1.5, y + 1.5, r() < 0.6 ? "#000000" : "#ffffff"); }
+  if (r() < 0.3) { const x = r() * W; L([x, 0, x + (r() - 0.5) * 12, H], "#f0f0f0", 1); }
+  if (!barsVisible()) ["#000000", "#1a1a1a", "#333333"].forEach((c, k) => R(k * 4, k * 4, W - k * 4, H - k * 4, null, c, 5));
+}
+function button(game, x1, y1, x2, y2, label, fg, bg, action, accent = null) {
+  const hov = game.hoverHit && game.hoverHit.x1 === x1 && game.hoverHit.y1 === y1;
+  R(x1, y1, x2, y2, hov ? mix(bg, accent || fg, 0.25) : mix(bg, fg, 0.07), accent || fg, 2);
+  T((x1 + x2) / 2, (y1 + y2) / 2 + 1, label, accent || fg, 12, true);
+  hit(game, x1, y1, x2, y2, action);
+}
+function drawSceneText(game, bg, fg) {
+  if (game.banner) { const [text, , color] = game.banner; T(W / 2, game.state === "menu" ? 272 : 90, text, color || fg, game.state === "menu" ? 15 : 20, true); }
+  if (game.state === "menu") {
+    T(W / 2 + 3, 45, "F O - R E X   G U M P", mix(bg, fg, 0.3), 30, true);
+    T(W / 2, 42, "F O - R E X   G U M P", fg, 30, true);
+    T(W / 2, 66, "run, Rex, run!", mix(bg, "#ff9f1a", 0.8), 12, true);
+    MENU.forEach((item, i) => {
+      const y = 88 + i * 19, sel = i === game.menuIndex;
+      let label = item;
+      if (item === "MUSIC") label = "MUSIC: " + (game.save.music ? "ON" : "OFF");
+      if (item === "FULLSCREEN") label = "FULLSCREEN: " + (document.fullscreenElement ? "ON" : "OFF") + "  (F)";
+      if (sel) R(W / 2 - 170, y - 9, W / 2 + 170, y + 9, mix(bg, "#4db8ff", 0.25));
+      T(W / 2, y, sel ? `>  ${label}  <` : label, item === "MOTIVATION ROOM" ? "#ff9f1a" : fg, 14, true);
+      hit(game, W / 2 - 170, y - 9.5, W / 2 + 170, y + 9.5, () => menuChoose(game, i), ["menu", i]);
+      if (sel && i === 0 && game.save.daily_streak) T(W / 2 + 180, y, `daily streak: ${game.save.daily_streak}`, "#5cd65c", 10, true, "left");
+    });
+    T(W / 2, 238, `click or arrows + Enter   Space jump   Down duck   X slow-mo   F fullscreen   world: ${game.land().name}`, fg, 10);
+    T(W - 8, 292, VERSION, mix(bg, fg, 0.5), 9, false, "right");
+    if (game.save.trophy) drawTrophy(118, 150, 1.0, fg);
+    drawStreak(game, 16, 14, bg, fg);
+  } else if (game.state === "over") {
+    R(W / 2 - 320, 46, W / 2 + 320, 194, mix(bg, fg, 0.06), mix(bg, fg, 0.25), 1);
+    T(W / 2, 70, "G A M E   O V E R", fg, 28, true);
+    T(W / 2, 100, `score ${game.score}    level ${game.level}    +${game.runCoins} coins` + (game.runGems ? `   +${game.runGems} diamonds` : ""), fg, 14, true);
+    if (game.newHigh) T(W / 2, 122, "NEW HIGH SCORE!", "#ff5c5c", 16, true);
+    else if (game.save.daily_streak) T(W / 2, 122, `daily streak: day ${game.save.daily_streak}/7  -  come back tomorrow for +${25 * Math.min(7, game.save.daily_streak + 1)} coins`, "#5cd65c", 11, true);
+    if (!game.shake) {
+      button(game, W / 2 - 300, 140, W / 2 - 160, 166, "PLAY AGAIN", fg, bg, () => Ads.breakThen(() => game.startRun()));
+      if (!game.continued) button(game, W / 2 - 150, 140, W / 2 + 10, 166, "AD: CONTINUE", fg, bg, () => adContinue(game), "#5cd65c");
+      if (!game.doubled && game.runCoins > 0) button(game, W / 2 + 20, 140, W / 2 + 180, 166, "AD: 2x COINS", fg, bg, () => adDouble(game), "#e6a700");
+      button(game, W / 2 + 190, 140, W / 2 + 300, 166, "MENU", fg, bg, () => game.goMenu());
+      T(W / 2, 182, "Space: again   C: continue (ad)   D: double coins (ad)   M / Esc: menu", fg, 10);
+    }
+  }
+  if (game.state === "running" && game.paused) {
+    R(W / 2 - 230, 70, W / 2 + 230, 225, mix(bg, fg, 0.12), fg, 2);
+    T(W / 2, 98, "P A U S E D", fg, 26, true);
+    T(W / 2, 135, `score ${game.score}    level ${game.level}    +${game.runCoins} coins`, fg, 12, true);
+    button(game, W / 2 - 150, 160, W / 2 - 10, 186, "RESUME", fg, bg, () => game.setPause(false));
+    button(game, W / 2 + 10, 160, W / 2 + 150, 186, "QUIT RUN", fg, bg, () => { game.die(); game.shake = 0; game.goMenu(); });
+    T(W / 2, 206, "Esc / P / Space: resume     Q: quit to the menu", fg, 11);
+  }
+  if (game.state === "running" && !game.paused && !game.boss && game.frame < 300 && game.save.headstart > 0 && !game.headstartUsed)
+    button(game, W / 2 - 110, 108, W / 2 + 110, 132, `HEAD START (H)  x${game.save.headstart}`, fg, bg, () => game.useHeadstart(), "#5cd65c");
+}
+// daily streak card: a flame, the day, 7 pips and tomorrow's reward
+function drawStreak(game, x, y, bg, fg) {
+  const st = game.save.daily_streak || 0; if (!st) return;
+  R(x, y, x + 168, y + 52, mix(bg, fg, 0.06), mix(bg, "#ff9f1a", 0.6), 1.5);
+  const fx = x + 16, fy = y + 30, flick = Math.sin(game.tick * 0.3) * 1.5;
+  P([fx - 9, fy + 10, fx - 10, fy - 2, fx - 4, fy - 10, fx - 2, fy - 4, fx + 1, fy - 16 + flick, fx + 9, fy - 3, fx + 9, fy + 10], "#ff7b1a");
+  P([fx - 5, fy + 10, fx - 5, fy + 2, fx, fy - 6 + flick, fx + 5, fy + 2, fx + 5, fy + 10], "#ffd23f");
+  T(x + 34, y + 13, `DAILY STREAK  day ${st}/7`, "#ff9f1a", 11, true, "left");
+  for (let i = 0; i < 7; i++) R(x + 34 + i * 18, y + 24, x + 48 + i * 18, y + 32, i < st ? "#ff9f1a" : mix(bg, fg, 0.15));
+  T(x + 34, y + 43, st < 7 ? `tomorrow: +${25 * (st + 1)} coins` + (st + 1 === 7 ? " +2 gems" : "") : "max streak: +175 coins/day", mix(bg, fg, 0.7), 9, false, "left");
+}
+function drawTrophy(cx, by, s, fg) {
+  const g = "#ffcc00", d = "#c99700";
+  R(cx - 22 * s, by - 6 * s, cx + 22 * s, by, d); R(cx - 6 * s, by - 22 * s, cx + 6 * s, by - 6 * s, g);
+  P([cx - 26 * s, by - 62 * s, cx + 26 * s, by - 62 * s, cx + 18 * s, by - 30 * s, cx - 18 * s, by - 30 * s], g);
+  O(cx - 36 * s, by - 58 * s, cx - 20 * s, by - 40 * s, null, g, 3 * s); O(cx + 20 * s, by - 58 * s, cx + 36 * s, by - 40 * s, null, g, 3 * s);
+  drawStar(cx, by - 48 * s, 7 * s, "#ffffff");
+  T(cx, by + 12 * s, "LEGEND", g, 11, true);
+}
+
+// ---------------------------------------------------------------- shop
+function drawShop(game) {
+  const bg = game.col("bg"), fg = game.col("fg"), [title, items] = SHOPS[game.shopTab];
+  game.shopIndex = ((game.shopIndex % items.length) + items.length) % items.length;
+  R(0, 0, W, H, bg);
+  T(290, 20, title, fg, 20, true);
+  hit(game, 120, 6, 460, 34, () => game.openShop(game.shopTab === "power" ? "style" : "power"));
+  T(290, 42, `coins: ${game.save.coins}     diamonds: ${game.save.diamonds}`, game.coinCol(), 13, true);
+  const top = 70, row = 20, visible = 9, rows = game.shopRows(items);
+  const sel = rows.findIndex(r => r[0] === "item" && r[1] === game.shopIndex);
+  const selTop = sel > 0 && rows[sel - 1][0] === "header" ? sel - 1 : sel;
+  if (game.shopFollow) { if (selTop < game.shopScroll) game.shopScroll = selTop; else if (sel >= game.shopScroll + visible) game.shopScroll = sel - visible + 1; }
+  game.shopScroll = clamp(game.shopScroll, 0, Math.max(0, rows.length - visible));
+  for (let vi = 0; vi < visible; vi++) {
+    const r = game.shopScroll + vi; if (r >= rows.length) break;
+    const y = top + vi * row, [what, val] = rows[r];
+    if (what === "header") { T(30, y + 1, `-- ${val} --`, mix(bg, fg, 0.55), 10, true, "left");
+      L([40 + 8 * (val.length + 6), y + 1, 560, y + 1], mix(bg, fg, 0.25), 1); continue; }
+    const it = items[val], [iid, name, , , kind] = it;
+    if (val === game.shopIndex) R(25, y - 9, 560, y + 9, mix(bg, "#4db8ff", 0.25));
+    T(40, y, game.shopTab === "style" ? name.split(": ").pop() : name, fg, 12, true, "left");
+    T(400, y, game.priceText(it), game.coinCol(), 12, true, "right");
+    T(500, y, game.itemStatus(it), mix(bg, fg, 0.6), 11, false, "right");
+    hit(game, 25, y - 10, 560, y + 10, () => { game.shopIndex = val; game.buy(it); }, ["shop", val]);
+  }
+  if (game.shopScroll > 0) { T(15, top, "^", fg, 14, true); hit(game, 0, top - 12, 25, top + 14, () => shopWheel(game, -3)); }
+  if (game.shopScroll + visible < rows.length) { T(15, top + (visible - 1) * row, "v", fg, 14, true);
+    hit(game, 0, top + (visible - 1) * row - 12, 25, top + (visible - 1) * row + 14, () => shopWheel(game, 3)); }
+  drawPreview(game, items[game.shopIndex], bg, fg);
+  hit(game, 580, 58, 885, 270, () => game.buy(items[game.shopIndex]));
+  if (game.message) T(290, 262, game.message, "#ff9f1a", 12, true);
+  T(W / 2, 285, "click/Enter: buy or equip   wheel: scroll   click title/Tab: other shop   Esc: back", fg, 10);
+  for (const p of game.particles) drawParticle(p, fg);
+}
+function drawPreview(game, it, bg, fg) {
+  const [iid, name, desc, , kind] = it, x0 = 590, y0 = 62, x1 = 885, y1 = 205, cx = (x0 + x1) / 2;
+  R(x0 - 6, y0 - 6, x1 + 6, y1 + 66, mix(bg, fg, 0.06), mix(bg, fg, 0.3), 1);
+  const ground = y1 - 12, legs = Math.floor(game.tick / 8) % 2 === 0;
+  const skin = SKIN_COLOR[game.save.skin] || fg, lk = Object.assign(D.look(game, false), {skinFx: SKIN_FX[game.save.skin]});
+  if (kind === "land") drawLandPreview(game, iid, x0, y0, x1, y1);
+  else {
+    L([x0 + 10, ground, x1 - 10, ground], fg, 1.5);
+    if (kind === "skin") drawDinoShape(game, cx - 40, ground, 1.8, SKIN_COLOR[iid] || fg, bg, Object.assign({}, lk, {legsUp: legs, skinFx: SKIN_FX[iid]}));
+    else if (kind === "pet") { drawDinoShape(game, cx - 10, ground, 1.3, skin, bg, Object.assign({}, lk, {legsUp: legs}));
+      drawPet(game, cx - 45, ground, iid, fg, 1.3); }
+    else if (kind === "trail") {
+      const pr = [];
+      for (let i = 0; i < 9; i++) { const px = cx - 30 - i * 11 - (game.tick % 11), py = ground - 34 + Math.sin(i + game.tick * 0.1) * 4;
+        const c = {trail_rainbow: CONFETTI[i % 6], trail_sparkle: "#ffe14d", trail_hearts: "#ff4f7b", trail_fire: ["#ffe14d", "#ff9f1a", "#ff5c5c"][i % 3], trail_bubbles: "#7fd4ff"}[iid];
+        if (c) drawParticle({x: px, y: py, size: iid === "trail_rainbow" ? 6 : 4, color: c,
+          shape: {trail_sparkle: "star", trail_hearts: "heart", trail_bubbles: "bubble"}[iid] || null}, fg); }
+      drawDinoShape(game, cx - 20, ground, 1.3, skin, bg, Object.assign({}, lk, {legsUp: legs}));
+    }
+    else if (kind === "egg") {
+      const wob = Math.sin(game.tick * 0.2) * 0.12, ex = cx, ey = ground - 45;
+      GFX.g.save(); GFX.g.translate(ex, ey); GFX.g.rotate(wob); GFX.g.translate(-ex, -ey);
+      O(ex - 30, ey - 40, ex + 30, ey + 40, "#fff3d6", "#c99700", 2);
+      for (let i = 0; i < 5; i++) drawStar(ex - 18 + i * 9, ey - 10 + (i % 2) * 14, 4, CONFETTI[i]);
+      GFX.g.restore(); T(ex, ey + 2, "?", "#b366ff", 26, true);
+    }
+    else if (["acc", "hair", "eyes", "outfit"].includes(kind)) {
+      const l2 = Object.assign({}, lk, {legsUp: legs});
+      l2[kind] = {acc: iid, outfit: iid, hair: HAIR[iid], eyes: EYES[iid]}[kind];
+      drawDinoShape(game, cx - 40, ground, 1.8, skin, bg, l2);
+    } else if (kind === "toggle") drawCouple(game, cx + 20, ground, 1.2, skin, bg, {legsUp: legs, look: D.look(game, true)}, true);
+    else if (iid === "trophy") drawTrophy(cx, ground - 10, 1.4, fg);
+    else {
+      const hop = iid === "doublejump" ? Math.abs(Math.sin(game.tick * 0.06)) * 40 : 0;
+      drawDinoShape(game, cx - 30, ground - hop, 1.4, skin, bg, Object.assign({}, lk, {legsUp: legs}));
+      const sx = cx - 30;
+      if (iid === "shield") O(sx - 14, ground - hop - 86, sx + 86, ground - hop + 8, null, "#4db8ff", 2);
+      if (iid === "magnet") { const r = 40 + (game.tick % 40); O(cx - r, ground - 40 - r, cx + r, ground - 40 + r, null, "#ff5c5c", 1); }
+      if (iid === "coinx2" || iid === "magnet") for (let i = 0; i < 3; i++) O(cx + 50 + i * 22, ground - 70, cx + 64 + i * 22, ground - 54, game.coinCol(), fg, 1);
+      if (iid === "slowmo") R(x0, y0, x1, y1, null, "#4db8ff", 4);
+      if (iid === "revive") { drawHeart(cx + 60, ground - 80, 12, "#ff4f7b"); T(cx + 60, ground - 80, "+1", "#ffffff", 10, true); }
+      if (iid === "headstart") for (let i = 0; i < 5; i++) L([cx - 70 - i * 6, ground - 50 + i * 8, cx - 30 - i * 6, ground - 50 + i * 8], "#5cd65c", 2);
+      if (iid === "lucky") { const c = "#3cb043"; for (const [dx, dy] of [[0, -8], [8, 0], [0, 8], [-8, 0]]) O(cx + 70 + dx - 7, ground - 80 + dy - 7, cx + 70 + dx + 7, ground - 80 + dy + 7, c);
+        L([cx + 70, ground - 72, cx + 76, ground - 56], "#2a7a30", 2); }
+      if (iid === "ufo_luck") { O(cx + 30, y0 + 12, cx + 98, y0 + 30, "#9aa0ab"); O(cx + 48, y0 + 2, cx + 80, y0 + 22, "#bfe9ff"); }
+    }
+  }
+  T(cx, y1 + 16, name, fg, 14, true);
+  T(cx, y1 + 38, desc, mix(bg, fg, 0.8), 10, false, "center", "middle", 280);
+  T(cx, y1 + 58, game.priceText(it) + "    " + game.itemStatus(it), game.coinCol(), 12, true);
+}
+function drawLandPreview(game, iid, x0, y0, x1, y1) {
+  const saved = GFX.fx; GFX.fx = LANDS[iid].fx || null; GFX.cmap.clear();
+  const land = LANDS[iid], c = land.day, ground = y1 - 8, decor = land.decor;
+  R(x0, y0, x1, y1, c.bg);
+  if (decor === "sketch") { for (let y = y0 + 14; y < ground; y += 16) L([x0, y, x1, y], mix(c.bg, "#7fa7d9", 0.45), 1); L([x0 + 22, y0, x0 + 22, y1], "#e88b8b", 2); }
+  if (decor === "synth") { drawSynthSun((x0 + x1) / 2 + 40, ground - 20, 50);
+    for (const [hx, w, h] of [[x0 + 5, 120, 40], [x0 + 150, 120, 30]]) P([hx, ground, hx + w / 2, ground - h * 1.5, hx + w, ground], c.hill, c.fg, 2);
+    L([x0, ground, x1, ground], c.fg, 2);
+  } else {
+    O(x1 - 50, y0 + 12, x1 - 22, y0 + 40, decor === "craters" ? "#ff9f6b" : "#ffe9a3");
+    O(x0 + 30, y0 + 22, x0 + 80, y0 + 36, c.cloud);
+    for (const [hx, w, h] of [[x0, 150, 50], [x0 + 110, 130, 38], [x0 + 185, 110, 55]]) HALF(hx, ground - h, hx + w, ground + h, c.hill, decor === "sketch" ? c.fg : null, 1.5);
+    if (decor === "trees") for (const tx of [x0 + 60, x0 + 170, x0 + 240]) P([tx - 9, ground - 20, tx + 9, ground - 20, tx, ground - 46], "#2f6b35");
+    if (decor === "snow") for (let i = 0; i < 18; i++) R(x0 + (i * 37 + game.tick) % (x1 - x0), y0 + (i * 23 + game.tick * 0.7) % (ground - y0), x0 + (i * 37 + game.tick) % (x1 - x0) + 2, y0 + (i * 23 + game.tick * 0.7) % (ground - y0) + 2, "#9fb3c8");
+    if (decor === "craters") O(x0 + 140, ground - 20, x0 + 170, ground - 12, "#b06a43");
+    R(x0, ground, x1, y1, c.bg); L([x0, ground, x1, ground], c.fg, 1.5);
+    if (decor === "noir") { const r = rng(Math.floor(game.tick / 2)); for (let i = 0; i < 25; i++) { const gx = x0 + r() * (x1 - x0), gy = y0 + r() * (y1 - y0); R(gx, gy, gx + 1.5, gy + 1.5, "#000000"); } }
+  }
+  if (land.world) {                                        // show the world's own obstacles
+    const wd = land.world, gy = ground;
+    if (decor === "deepsea") { R(x0, y0, x1, ground, c.bg); for (let i = 0; i < 3; i++) P([x0 + 40 + i * 90, y0, x0 + 70 + i * 90, y0, x0 + 110 + i * 90, ground, x0 + 50 + i * 90, ground], mix(c.bg, "#ffffff", 0.07)); }
+    if (decor === "haunted") { R(x0, y0, x1, ground, c.bg); O(x1 - 60, y0 + 8, x1 - 20, y0 + 48, "#f4f1d0"); }
+    if (decor === "moon") { R(x0, y0, x1, ground, c.bg); for (let i = 0; i < 20; i++) R(x0 + (i * 53) % (x1 - x0), y0 + (i * 29) % 90, x0 + (i * 53) % (x1 - x0) + 1.5, y0 + (i * 29) % 90 + 1.5, "#ffffff");
+      O(x1 - 60, y0 + 10, x1 - 25, y0 + 45, "#2f6fd6"); }
+    for (const [hx, w, h] of [[x0, 150, 40], [x0 + 160, 140, 30]]) HALF(hx, gy - h, hx + w, gy + h, c.hill);
+    R(x0, gy, x1, y1, c.bg); L([x0, gy, x1, gy], c.fg, 1.5);
+    const ob1 = {kind: "cactus", look: wd.ground, x: x0 + 120, y: gy, w: 26, h: wd.ground === "crab" ? 20 : 34, n: 1, cw: wd.ground === "crab" ? 26 : 20, t: game.tick, ph: game.tick * 0.1};
+    const ob2 = {kind: "bird", look: wd.flyer, x: x0 + 190, y: gy - 50 + 6 * Math.sin(game.tick * 0.1), w: 42, h: 26};
+    const ob3 = wd.special === "puffer" ? {kind: "puffer", x: x0 + 245, y: gy - 2, w: 34, h: 30, grow: 0.6} :
+      wd.special === "ghost" ? {kind: "ghost", x: x0 + 245, y: gy - 22, w: 30, h: 32, t: game.tick} : {kind: "rover", x: x0 + 240, y: gy, w: 44, h: 26};
+    for (const ob of [ob1, ob2, ob3]) drawObstacle(game, ob, 0, 0, c.fg);
+  }
+  drawDinoShape(game, x0 + 30, ground, 0.9, decor === "pixel" ? c.fg : (SKIN_COLOR[game.save.skin] || c.fg), c.bg, {legsUp: Math.floor(game.tick / 8) % 2 === 0});
+  GFX.fx = saved;
+}
+function shopWheel(game, step) { game.shopFollow = false; game.shopScroll = Math.max(0, game.shopScroll + step); }
+
+// ---------------------------------------------------------------- mine
+function drawMine(game) {
+  const s = game.save, rate = game.mineRate(), cap = game.mineCap(), store = s.mine_store;
+  R(0, 0, W, H, "#2b1d14");
+  T(220, 22, "T H E   D I N O   M I N E", "#ffcc66", 20, true);
+  T(220, 44, `coins ${s.coins}      diamonds ${s.diamonds}`, "#ffcc66", 13, true);
+  const info = {"COLLECT COINS": `${Math.floor(store)} coins dug`, "HIRE MINER": `${s.miners}/8 miners`,
+    "BETTER PICKAXE": `level ${s.pickaxe}/5`, "BIGGER CART": `holds ${cap} offline`, "BACK": ""};
+  MINE_MENU.forEach((item, i) => {
+    const y = 82 + i * 30;
+    if (i === game.mineIndex) R(20, y - 12, 445, y + 12, "#4a3424");
+    T(32, y, item, "#ffffff", 12, true, "left"); T(300, y, info[item], "#d9c3a5", 10, false, "right");
+    const cost = game.mineCost(item);
+    if (cost != null) T(430, y, `${cost} diamond${cost > 1 ? "s" : ""}`, "#5ce1ff", 12, true, "right");
+    hit(game, 20, y - 13, 445, y + 13, () => { game.mineIndex = i; game.mineAction(item); }, ["mine", i]);
+  });
+  T(232, 240, `${rate.toFixed(0)} coins/min while you play  -  only ${cap} while you're away`, "#ffcc66", 11, true);
+  if (game.message) T(232, 262, game.message, "#ff9f1a", 12, true);
+  T(W / 2, 288, "click or Up/Down + Enter   C: collect   Esc: back      Diamonds: catch them in runs, beat bosses", "#d9c3a5", 10);
+  // the tunnel
+  const x0 = 465, x1 = 880, y0 = 60, y1 = 250;
+  R(x0, y0, x1, y1, "#1a110b"); R(x0, y0 - 8, x1, y0, "#6b4a2b");
+  for (const px of [x0 + 20, x0 + 170, x0 + 320]) R(px, y0, px + 10, y1, "#6b4a2b");
+  const r = rng(4);
+  for (let i = 0; i < 30; i++) { const gx = x0 + 10 + r() * (x1 - x0 - 20), gy = y0 + 10 + r() * (y1 - y0 - 50);
+    O(gx - 2.5, gy - 2.5, gx + 2.5, gy + 2.5, r() < 0.3 ? "#5ce1ff" : r() < 0.5 ? "#ffcc33" : "#8a7a6a"); }
+  L([x0, y1 - 8, x1, y1 - 8], "#8a7a6a", 2);
+  for (let m = 0; m < s.miners; m++) {
+    const mx = x0 + 40 + m * 34, swing = Math.sin(game.tick * 0.2 + m) * 6;
+    drawDinoShape(game, mx, y1 - 8, 0.55, "#7a7a7a", "#1a110b", {legsUp: Math.floor((game.tick + m * 7) / 10) % 2 === 0});
+    R(mx + 11, y1 - 40, mx + 25, y1 - 35, "#ffcc33");
+    L([mx + 22, y1 - 26, mx + 36, y1 - 36 + swing], "#c0c0c0", 2);
+  }
+  const cx = x1 - 85, fill = Math.min(1, store / cap);
+  P([cx, y1 - 48, cx + 66, y1 - 48, cx + 58, y1 - 18, cx + 8, y1 - 18], "#7a7a7a");
+  if (fill > 0) O(cx + 6, y1 - 48 - 18 * fill, cx + 60, y1 - 44, "#ffcc33");
+  O(cx + 8, y1 - 22, cx + 20, y1 - 10, "#333333"); O(cx + 46, y1 - 22, cx + 58, y1 - 10, "#333333");
+  T(cx + 33, y1 - 60 - 18 * fill, Math.floor(store), "#ffcc33", 11, true);
+}
+
+// ---------------------------------------------------------------- motivation room
+// the sunset fills the whole window (x0..x1, y0..y1 in game units can reach past the 900x300 area)
+function drawMotivationBack(game, x0, y0, x1, y1) {
+  const top = "#0b1020", midc = "#3a1f4d", low = "#c4572b", bands = 32, sx = W / 2, sy = 255;
+  for (let i = 0; i < bands; i++) {                       // sky gradient down to the horizon line
+    const ya = y0 + (sy + 20 - y0) * i / bands, yb = y0 + (sy + 20 - y0) * (i + 1) / bands + 1, t = i / (bands - 1);
+    R(x0, ya, x1, yb, t < 0.5 ? mix(top, midc, t * 2) : mix(midc, low, (t - 0.5) * 2));
+  }
+  R(x0, sy + 20, x1, y1, low);
+  const reach = Math.max(x1 - x0, y1 - y0) * 1.2;
+  for (let i = 0; i < 16; i++) { const a = i * Math.PI / 8 + game.tick * 0.004; L([sx, sy, sx + reach * Math.cos(a), sy + reach * Math.sin(a)], "#e0743a", 3); }
+  const glow = 70 + 4 * Math.sin(game.tick * 0.05);
+  O(sx - glow - 20, sy - glow - 20, sx + glow + 20, sy + glow + 20, "#e8843f"); O(sx - glow, sy - glow, sx + glow, sy + glow, "#ffb347");
+  const pts = [x0, y1, x0, 230];                           // mountain range across the full width
+  for (let k = 0, x = x0; x < x1 + 120; k++, x += 110) pts.push(x, [200, 236, 205, 250, 210, 240, 200, 230][k % 8]);
+  pts.push(x1 + 120, y1);
+  P(pts, "#1a0f1f"); R(x0, 250, x1, y1, "#1a0f1f");
+  for (const e of game.embers) R(e.x, e.y, e.x + 2, e.y + 2, "#ffb347");
+}
+function drawMotivation(game) {
+  GFX.g.clearRect(0, 0, W, H);                             // see-through: the sunset is drawn behind it
+  drawDinoShape(game, 232, 192, 1.1, "#1a0f1f", "#ffb347", {});
+  const [q, who] = QUOTES[game.quoteI];
+  T(W / 2, 22, "THE MOTIVATION ROOM", "#ffd9a0", 14, true);
+  T(W / 2, 75, `"${q}"`, "#ffffff", 17, true, "center", "middle", 760);
+  T(W / 2, 128, `- ${who}`, "#ffd9a0", 13);
+  T(W / 2, 160, game.affirm || AFFIRMATIONS[0], "#ffcf8a", 13, true);
+  const voice = window.speechSynthesis ? `voice: ${Voice.name()}` : "this browser has no speech voice";
+  T(W / 2, 268, `${voice}   |   epic music ${game.soundOn ? "ON" : "OFF"}`, "#ffe0b3", 10);
+  T(W / 2, 284, "click / Space / Right: next quote   Left: previous   M: sound on/off   Esc: back to the menu", "#ffe0b3", 10);
+  const [vx0, vy0, vx1, vy1] = game.view || [0, 0, W, H];
+  hit(game, vx0, vy0, vx1, vy1, () => game.showQuote(game.quoteI + 1));
+}
+
+// ---------------------------------------------------------------- menu actions
+function menuChoose(game, i) {
+  const item = MENU[i]; game.menuIndex = i;
+  if (item === "PLAY") game.startRun();
+  else if (item === "POWER-UP SHOP") game.openShop("power");
+  else if (item === "STYLE SHOP") game.openShop("style");
+  else if (item === "DINO MINE") { game.updateMine(); game.state = "mine"; game.message = ""; }
+  else if (item === "MOTIVATION ROOM") { game.state = "motivation"; game.showQuote(randint(0, QUOTES.length - 1)); }
+  else if (item === "MUSIC") { game.save.music = game.save.music ? 0 : 1; game.write(); }
+  else if (item === "FULLSCREEN") toggleFullscreen();
+}
+
+// =====================================================================
+//  FULLSCREEN BARS, ADS, INPUT AND THE MAIN LOOP
+// =====================================================================
+let game = null;
+
+// ------------------------------------------- decoration around the game
+// Clouds and seagulls in the space above the game, and now and then a
+// sandworm sliding past below it (only during a run). Pure decoration.
+function updateDeco(g) {
+  let d = g.deco;
+  if (!d) {
+    const r = rng(3);
+    d = g.deco = {clouds: Array.from({length: 9}, () => [r(), 0.2 + r() * 0.55, 0.7 + r() * 0.7, 0.00008 + r() * 0.00012]),
+      gulls: [], nextGull: 240, worm: null, nextWorm: randint(1500, 3000), sand: []};
+  }
+  for (const c of d.clouds) { c[0] -= c[3]; if (c[0] < -0.12) c[0] = 1.12; }
+  if (--d.nextGull <= 0) {
+    d.nextGull = randint(420, 1100);
+    const left = Math.random() < 0.5, y = rand(0.25, 0.7), sp = rand(0.0011, 0.0019), k = choice([1, 1, 2, 3, 4]);
+    for (let i = 0; i < k; i++) d.gulls.push({x: left ? 1.08 + 0.035 * i : -0.08 - 0.035 * i, y: y + rand(-0.12, 0.12),
+      v: (left ? -sp : sp) * rand(0.93, 1.07), phase: rand(0, 6), size: rand(0.8, 1.15)});
+  }
+  for (const gl of d.gulls) { gl.x += gl.v; gl.phase += 0.16; gl.y += 0.0015 * Math.sin(gl.phase * 0.15); }
+  d.gulls = d.gulls.filter(gl => gl.x > -0.2 && gl.x < 1.2);
+  const inRun = g.state === "running" || g.state === "over";
+  if (d.worm && !inRun) d.worm = null;
+  if (!d.worm) {
+    if (inRun && !g.paused && --d.nextWorm <= 0) {
+      d.nextWorm = randint(2400, 6000); const right = Math.random() < 0.5;
+      d.worm = {p: right ? -0.05 : 1.05, dir: right ? 1 : -1, t: 0, speed: rand(0.0028, 0.0036), tail: 0.4};
+    }
+  } else {
+    const w = d.worm; w.p += w.dir * w.speed; w.t += 0.07;
+    if ((w.dir > 0 && w.p > 1.05 + w.tail) || (w.dir < 0 && w.p < -0.05 - w.tail)) d.worm = null;
+  }
+  for (const s of d.sand) { s[0] += s[2]; s[1] += s[3]; s[3] += 0.00022; s[4]--; }
+  d.sand = d.sand.filter(s => s[4] > 0);
+}
+function barColors(g) {
+  if (g.state === "mine") return ["#2b1d14", "#2b1d14"];
+  if (g.state === "motivation") return ["#0b1020", "#1a0f1f"];
+  const c = C(g.col("bg")); return [c, ["menu", "running", "over"].includes(g.state) ? C(groundColor(g)) : c];
+}
+function drawBarDeco(g) {
+  const s = GFX.sctx, d = g.deco, f = GFX.f, bar = GFX.oy, Wd = GFX.sw, bot = bar + H * f;
+  if (!d || !["menu", "running", "over", "shop"].includes(g.state)) return;
+  const bg = C(g.col("bg")), cloud = C(g.col("cloud")), fgc = C(g.col("fg")), decor = g.land().decor;
+  if (decor === "deepsea" || decor === "moon") {              // bubbles rising / twinkling stars instead of sky
+    for (let i = 0; i < 40; i++) {
+      const x = ((i * 0.6180339) % 1) * Wd;
+      if (decor === "deepsea") { const r = (2 + i % 4) * f * 0.8, y = bar - ((g.tick * (0.4 + (i % 5) * 0.15) * f + i * 37 * f) % (bar + 20 * f));
+        s.strokeStyle = mix(bg, "#ffffff", 0.45); s.lineWidth = Math.max(1, f * 0.7); s.beginPath(); s.arc(x, y, r, 0, 7); s.stroke(); }
+      else { const y = ((i * 0.4142135) % 1) * bar * 0.92, tw = 0.5 + 0.5 * Math.sin(g.tick * 0.05 + i); s.fillStyle = mix(bg, "#ffffff", 0.3 + 0.6 * tw);
+        s.fillRect(x, y, 1.5 * f, 1.5 * f); }
+    }
+    return;
+  }
+  const cloudAt = c => { const cx = c[0] * Wd, cy = c[1] * bar, k = c[2] * f; s.fillStyle = cloud;
+    for (const [dx, dy, r] of [[-22, 4, 14], [0, -4, 20], [22, 4, 15], [8, 8, 14]]) { s.beginPath(); s.arc(cx + dx * k, cy + dy * k, r * k, 0, 7); s.fill(); } };
+  d.clouds.filter((_, i) => i % 2 === 0).forEach(cloudAt);
+  s.strokeStyle = mix(bg, fgc, 0.85); s.lineCap = "round";
+  for (const gl of d.gulls) {
+    const x = gl.x * Wd, y = gl.y * bar, k = 7 * f * gl.size, fl = Math.sin(gl.phase);
+    s.lineWidth = Math.max(2, 0.35 * k); s.beginPath();
+    s.moveTo(x - 2 * k, y - 0.3 * k + fl * 0.4 * k); s.quadraticCurveTo(x - k, y - 0.9 * k - fl * 0.5 * k, x, y);
+    s.quadraticCurveTo(x + k, y - 0.9 * k - fl * 0.5 * k, x + 2 * k, y - 0.3 * k + fl * 0.4 * k); s.stroke();
+  }
+  d.clouds.filter((_, i) => i % 2 === 1).forEach(cloudAt);
+  const w = d.worm;
+  if (w) {
+    const surface = bot + bar * 0.86, r0 = bar * 0.24, seg = r0 * 1.05, n = 20;
+    let [body, ring] = g.nightT > 0.5 ? ["#8f6f4f", "#5e3d22"] : ["#c49a6c", "#8a5a36"];
+    s.strokeStyle = mix(bg, fgc, 0.35); s.lineWidth = Math.max(1, f * 0.8);
+    for (let k = 0; k <= Wd / (14 * f); k++) { const x = k * 14 * f + (k % 3) * 3 * f, jy = surface + (k % 2) * 2 * f + rand(-1.5, 1.5) * f;
+      s.beginPath(); s.moveTo(x, jy); s.lineTo(x + 4 * f, jy); s.stroke(); }
+    w.tail = n * seg / Wd + 0.03;
+    const pts = [];
+    for (let i = 0; i < n; i++) { const r = r0 * (1 - 0.025 * i);
+      pts.push([w.p * Wd - w.dir * i * seg, surface - r - bar * 0.025 * (1 + Math.sin(w.t * 1.5 - i * 0.5)), r]); }
+    for (let i = n - 1; i >= 0; i--) { const [x, y, r] = pts[i];
+      s.fillStyle = body; s.strokeStyle = ring; s.lineWidth = Math.max(1, r * 0.14);
+      s.beginPath(); s.arc(x, y, r, 0, 7); s.fill(); s.stroke();
+      if (i && i % 2 === 0) { s.lineWidth = Math.max(1, r * 0.12); s.beginPath(); s.moveTo(x - r * 0.6, y - r * 0.75); s.lineTo(x - r * 0.6, y + r * 0.75); s.stroke(); } }
+    const [hx, hy, hr] = pts[0], mx = hx + w.dir * hr * 0.55;
+    s.fillStyle = "#3a1f12"; s.beginPath(); s.ellipse(mx, hy, hr * 0.45, hr * 0.6, 0, 0, 7); s.fill();
+    s.fillStyle = "#f4ecd8";
+    for (let k = 0; k < 5; k++) { const a = k * 2 * Math.PI / 5 + w.t, tx = mx + hr * 0.42 * Math.cos(a), ty = hy + hr * 0.55 * Math.sin(a);
+      s.beginPath(); s.moveTo(tx, ty); s.lineTo(tx + (mx - tx) * 0.45 - hr * 0.08, ty + (hy - ty) * 0.45); s.lineTo(tx + (mx - tx) * 0.45 + hr * 0.08, ty + (hy - ty) * 0.45); s.fill(); }
+    for (const i of [0, n >> 1, n - 1]) if (Math.random() < 0.35) d.sand.push([pts[i][0] / Wd, surface / (bot + bar), rand(-0.0009, 0.0009), rand(-0.004, -0.0018), 32]);
+  }
+  s.fillStyle = "#c49a6c";
+  for (const p of d.sand) { const r = Math.max(1.5, f * 1.6); s.fillRect(p[0] * Wd - r, p[1] * (bot + bar) - r, 2 * r, 2 * r); }
+}
+
+// ---------------------------------------------------------------- ads
+// Works with the CrazyGames or Poki SDK when the game runs on their site
+// (add their script tag to the page). Anywhere else a short placeholder
+// "ad" is shown so the reward flow can be tested.
+const Ads = {
+  kind: "none", sdk: null, showing: false, placeholder: null, runs: 0,
+  async init() {
+    try {
+      if (window.CrazyGames && window.CrazyGames.SDK) { this.kind = "crazygames"; this.sdk = window.CrazyGames.SDK; if (this.sdk.init) await this.sdk.init(); }
+      else if (window.PokiSDK) { this.kind = "poki"; await window.PokiSDK.init(); if (window.PokiSDK.gameLoadingFinished) window.PokiSDK.gameLoadingFinished(); }
+    } catch (e) { this.kind = "none"; }
+  },
+  gameplayStart() { try { if (this.kind === "crazygames") this.sdk.game.gameplayStart(); else if (this.kind === "poki") window.PokiSDK.gameplayStart(); } catch (e) {} },
+  gameplayStop() { try { if (this.kind === "crazygames") this.sdk.game.gameplayStop(); else if (this.kind === "poki") window.PokiSDK.gameplayStop(); } catch (e) {} },
+  mute(on) { if (Audio.master) Audio.master.gain.value = on ? 0 : 0.9; },
+  rewarded(done) {
+    if (this.showing) return;
+    this.showing = true; this.mute(true);
+    const finish = ok => { this.showing = false; this.placeholder = null; this.mute(false); done(!!ok); };
+    try {
+      if (this.kind === "crazygames") return this.sdk.ad.requestAd("rewarded", {adFinished: () => finish(true), adError: () => finish(false)});
+      if (this.kind === "poki") return window.PokiSDK.rewardedBreak().then(ok => finish(ok));
+    } catch (e) { return finish(false); }
+    this.placeholder = {t: 180, done: finish};                   // test mode: 3 s fake ad
+  },
+  breakThen(cb) {                                                 // short ad between some runs
+    this.runs++;
+    if (this.kind === "none" || this.runs % 3) return cb();
+    this.mute(true);
+    const go = () => { this.mute(false); cb(); };
+    try {
+      if (this.kind === "crazygames") return this.sdk.ad.requestAd("midgame", {adFinished: go, adError: go});
+      if (this.kind === "poki") return window.PokiSDK.commercialBreak().then(go);
+    } catch (e) {}
+    go();
+  },
+  update() { if (this.placeholder && --this.placeholder.t <= 0) this.placeholder.done(true); },
+};
+function adContinue(g) { if (g.continued) return; Ads.rewarded(ok => { if (ok && g.state === "over") g.continueRun(); else g.message = "ad not finished"; }); }
+function adDouble(g) {
+  if (g.doubled || g.runCoins <= 0) return;
+  Ads.rewarded(ok => { if (!ok) return; g.save.coins += g.runCoins; g.showBanner(`+${g.runCoins} BONUS COINS!`, 120, "#e6a700");
+    g.runCoins *= 2; g.doubled = true; g.write(); Audio.sfx("power"); });
+}
+function drawAdPlaceholder() {
+  const p = Ads.placeholder; if (!p) return;
+  const s = GFX.sctx; s.setTransform(GFX.dpr, 0, 0, GFX.dpr, 0, 0);
+  s.fillStyle = "rgba(10,10,20,0.92)"; s.fillRect(0, 0, GFX.sw, GFX.sh);
+  s.fillStyle = "#ffffff"; s.textAlign = "center"; s.textBaseline = "middle";
+  s.font = `bold ${Math.round(24 * GFX.f)}px Courier New, monospace`; s.fillText("AD PLACEHOLDER", GFX.sw / 2, GFX.sh / 2 - 30 * GFX.f);
+  s.font = `${Math.round(12 * GFX.f)}px Courier New, monospace`;
+  s.fillText("on CrazyGames or Poki a real rewarded ad plays here", GFX.sw / 2, GFX.sh / 2);
+  s.fillText(`reward in ${Math.ceil(p.t / 60)}...`, GFX.sw / 2, GFX.sh / 2 + 24 * GFX.f);
+}
+
+// ---------------------------------------------------------------- fullscreen
+function toggleFullscreen() {
+  // some pages (like an embedded preview) are not allowed to go fullscreen: say so instead of failing
+  const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
+  const blocked = () => game && game.showBanner("Fullscreen isn't allowed here - open the game file in its own browser tab", 180, "#ff9f1a");
+  if (document.fullscreenElement) { const p = document.exitFullscreen && document.exitFullscreen(); if (p && p.catch) p.catch(() => {}); return; }
+  if (!req || document.fullscreenEnabled === false) return blocked();
+  try { const p = req.call(el); if (p && p.catch) p.catch(blocked); } catch (e) { blocked(); }
+}
+
+// ---------------------------------------------------------------- render
+function render(g) {
+  if (g.state !== GFX.lastState) {                       // soft fade between screens
+    const soft = !(GFX.lastState === "running" && g.state === "over") && !(GFX.lastState === "over" && g.state === "running");
+    if (GFX.lastState && soft) GFX.fade = 1;
+    GFX.lastState = g.state;
+  }
+  const fx = ["menu", "running", "over"].includes(g.state) ? g.worldFx() : null;
+  g.hits = []; GFX.frame = g.tick;
+  g.view = [-GFX.ox / GFX.f, -GFX.oy / GFX.f, W + GFX.ox / GFX.f, H + GFX.oy / GFX.f];   // whole window, in game units
+  const inBar = hudInBar(g), dy = -GFX.oy / GFX.f + 6;
+  g.hudDy = inBar ? dy : 0;
+  beginGame(fx);
+  if (g.state === "shop") drawShop(g);
+  else if (g.state === "mine") drawMine(g);
+  else if (g.state === "motivation") drawMotivation(g);
+  else drawScene(g);
+  const s = GFX.sctx, d = GFX.dpr, f = GFX.f;
+  s.setTransform(d, 0, 0, d, 0, 0);
+  const [top, bottom] = barColors(g);
+  s.fillStyle = top; s.fillRect(0, 0, GFX.sw, GFX.sh / 2 + 1);
+  s.fillStyle = bottom; s.fillRect(0, GFX.sh / 2, GFX.sw, GFX.sh / 2);
+  if (barsVisible()) drawBarDeco(g);
+  const onScreen = (fn, shift = 0) => {                    // draw game-unit shapes straight on screen
+    const sg = GFX.g, sp = GFX.pixel, texts = GFX.texts;
+    GFX.g = s; GFX.pixel = false; GFX.texts = [];
+    s.setTransform(d * f, 0, 0, d * f, d * GFX.ox, d * (GFX.oy + shift * f));
+    fn(); const t = GFX.texts; GFX.g = sg; GFX.pixel = sp; GFX.texts = texts; return t;
+  };
+  if (g.state === "motivation") onScreen(() => drawMotivationBack(g, ...g.view));   // full-window sunset
+  endGame();
+  if (barsVisible() && ["running", "over"].includes(g.state) && g.dinoY - 60 < 0)
+    onScreen(() => drawPlayer(g, 0, 0, g.col("fg"), g.col("bg")));
+  flushText(0);
+  if (inBar) { const t = onScreen(() => drawTopHud(g, g.col("fg")), dy); GFX.texts = t; flushText(dy); }
+  if (barsVisible() && g.state === "running") {
+    s.setTransform(d, 0, 0, d, 0, 0); s.lineWidth = 5 * f;
+    if (g.slowmo) { s.strokeStyle = "#4db8ff"; s.strokeRect(3 * f, 3 * f, GFX.sw - 6 * f, GFX.sh - 6 * f); }
+    if (g.boost) { s.strokeStyle = g.boost[2]; s.lineWidth = 4 * f; s.strokeRect(2 * f, 2 * f, GFX.sw - 4 * f, GFX.sh - 4 * f); }
+  }
+  if (g.state === "over" && g.hitStop > 0) {             // crash flash
+    s.setTransform(d, 0, 0, d, 0, 0); s.fillStyle = `rgba(255,255,255,${(g.hitStop / 16) * 0.45})`;
+    s.fillRect(GFX.ox, GFX.oy, W * f, H * f);
+  }
+  if (GFX.fade > 0) { s.setTransform(d, 0, 0, d, 0, 0); s.fillStyle = `rgba(0,0,0,${GFX.fade * 0.85})`; s.fillRect(0, 0, GFX.sw, GFX.sh); GFX.fade = Math.max(0, GFX.fade - 0.09); }
+  drawAdPlaceholder();
+}
+
+// ---------------------------------------------------------------- input
+function handleKey(g, key, down) {
+  Audio.unlock();
+  if (Ads.showing) return;
+  const k = key.toLowerCase(), st = g.state;
+  if (!down) { if ((k === "arrowdown" || k === "s") && st === "running") g.duckRelease(); return; }
+  if (k === "f" && st !== "running") return toggleFullscreen();
+  if (st === "menu") {
+    if (k === "arrowup" || k === "w") g.menuIndex = (g.menuIndex + MENU.length - 1) % MENU.length;
+    else if (k === "arrowdown" || k === "s") g.menuIndex = (g.menuIndex + 1) % MENU.length;
+    else if (k === "enter" || k === " ") menuChoose(g, g.menuIndex);
+  } else if (st === "shop") {
+    g.shopFollow = true; const items = g.shopItems();
+    if (k === "arrowup" || k === "w") g.shopIndex = (g.shopIndex + items.length - 1) % items.length;
+    else if (k === "arrowdown" || k === "s") g.shopIndex = (g.shopIndex + 1) % items.length;
+    else if (["tab", "arrowleft", "arrowright", "a", "d"].includes(k)) g.openShop(g.shopTab === "power" ? "style" : "power");
+    else if (k === "escape" || k === "b") g.goMenu();
+    else if (k === "enter" || k === " ") g.buy(items[g.shopIndex]);
+  } else if (st === "mine") {
+    if (k === "arrowup" || k === "w") g.mineIndex = (g.mineIndex + MINE_MENU.length - 1) % MINE_MENU.length;
+    else if (k === "arrowdown" || k === "s") g.mineIndex = (g.mineIndex + 1) % MINE_MENU.length;
+    else if (k === "c") g.mineAction("COLLECT COINS");
+    else if (k === "escape" || k === "b") g.goMenu();
+    else if (k === "enter" || k === " ") g.mineAction(MINE_MENU[g.mineIndex]);
+  } else if (st === "motivation") {
+    if (k === " " || k === "arrowright" || k === "enter") g.showQuote(g.quoteI + 1);
+    else if (k === "arrowleft") g.showQuote(g.quoteI - 1);
+    else if (k === "m") { g.soundOn = !g.soundOn; if (g.soundOn) g.showQuote(g.quoteI); else Voice.stop(); }
+    else if (k === "escape" || k === "q" || k === "b") g.goMenu();
+  } else if (st === "running") {
+    if (k === "q") { g.die(); g.shake = 0; g.goMenu(); }
+    else if (g.paused) { if (["p", "escape", " ", "enter"].includes(k)) g.setPause(false); else if (k === "m") { g.die(); g.shake = 0; g.goMenu(); } }
+    else if (k === "p" || k === "escape") g.setPause(true);
+    else if (k === " " || k === "arrowup" || k === "w") g.onJump();
+    else if (k === "arrowdown" || k === "s") g.duckPress();
+    else if (k === "x") g.useSlowmo();
+    else if (k === "h") g.useHeadstart();
+  } else if (st === "over" && !g.shake) {
+    if (k === " " || k === "arrowup" || k === "w" || k === "enter") Ads.breakThen(() => g.startRun());
+    else if (k === "c") adContinue(g);
+    else if (k === "d") adDouble(g);
+    else if (k === "m" || k === "escape" || k === "q") g.goMenu();
+  }
+}
+function toGame(clientX, clientY) { return [(clientX - GFX.ox) / GFX.f, (clientY - GFX.oy) / GFX.f]; }
+function hitAt(g, x, y) { for (let i = g.hits.length - 1; i >= 0; i--) { const h = g.hits[i]; if (x >= h.x1 && x <= h.x2 && y >= h.y1 && y <= h.y2) return h; } return null; }
+function pointerMove(g, cx, cy) {
+  const [x, y] = toGame(cx, cy), h = hitAt(g, x, y); g.hoverHit = h;
+  if (h && h.hover) { const [kind, i] = h.hover; if (kind === "menu") g.menuIndex = i; else if (kind === "shop") g.shopIndex = i; else if (kind === "mine") g.mineIndex = i; }
+  GFX.screen.style.cursor = h && g.state !== "motivation" ? "pointer" : "default";
+}
+function pointerDown(g, cx, cy, touch = false) {
+  Audio.unlock();
+  if (Ads.showing) return;
+  const [x, y] = toGame(cx, cy), h = hitAt(g, x, y);
+  if (h) return h.action();
+  if (g.state === "running" && !g.paused) {
+    if (touch && cx < GFX.sw / 2) g.duckPress(); else g.onJump();
+  }
+}
+
+function boot() {
+  const canvas = document.getElementById("game");
+  gfxInit(canvas); game = new Game(); Ads.init();
+  window.addEventListener("resize", gfxResize);
+  document.addEventListener("fullscreenchange", gfxResize);
+  window.addEventListener("keydown", e => {
+    if ([" ", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab"].includes(e.key)) e.preventDefault();
+    if (e.repeat && e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    handleKey(game, e.key, true);
+  });
+  window.addEventListener("keyup", e => handleKey(game, e.key, false));
+  canvas.addEventListener("mousemove", e => pointerMove(game, e.clientX, e.clientY));
+  canvas.addEventListener("mousedown", e => { if (e.button === 0) pointerDown(game, e.clientX, e.clientY); });
+  canvas.addEventListener("wheel", e => { e.preventDefault(); const st = e.deltaY > 0 ? 1 : -1;
+    if (game.state === "shop") shopWheel(game, st); else if (game.state === "menu") game.menuIndex = (game.menuIndex + st + MENU.length) % MENU.length;
+    else if (game.state === "mine") game.mineIndex = (game.mineIndex + st + MINE_MENU.length) % MINE_MENU.length; }, {passive: false});
+  canvas.addEventListener("touchstart", e => { e.preventDefault(); for (const t of e.changedTouches) pointerDown(game, t.clientX, t.clientY, true); }, {passive: false});
+  canvas.addEventListener("touchend", e => { e.preventDefault(); if (game.state === "running") game.duckRelease(); }, {passive: false});
+  window.addEventListener("blur", () => game.setPause(true));
+  document.addEventListener("visibilitychange", () => { if (document.hidden) { game.setPause(true); game.write(); } });
+  window.addEventListener("pagehide", () => game.write());
+  let last = performance.now(), acc = 0;
+  const DT = 1000 / 60;
+  function frame(now) {
+    acc += Math.min(now - last, 250); last = now;
+    let steps = 0;
+    while (acc >= DT && steps < 5) { if (!Ads.showing) game.step(); Ads.update(); acc -= DT; steps++; }
+    if (steps === 5) acc = 0;
+    if (game.tick % 10 === 0) Audio.play(game.wantedMusic());
+    render(game);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+window.addEventListener("load", boot);
+</script>
+</body>
+</html>

@@ -1,0 +1,105 @@
+# =============================================================================
+#  WP4.3 wing-box design options. Each [[design]] is one design philosophy:
+#  the layout (spars, stringer pitch) is FIXED by the philosophy, the sizing
+#  (thicknesses, areas) is found by the optimiser (min. mass s.t. requirements).
+#
+#  vars.<name> = { eta = [...], x0 = [...], lo = .., hi = .. }
+#    eta : spanwise control points (eta = y / (b/2)); linear interpolation between
+#    x0  : starting values;  lo/hi : bounds (lo = minimum gauge)
+#  Units: m, m2.
+#  A11: stringer pitches and area bounds scaled to the A11 wing box (root box
+#  width 0.5 x 3.652 = 1.83 m, tip 0.58 m); the reference values were for a
+#  4.2 m wide box.
+# =============================================================================
+
+[optimiser]
+method            = "SLSQP"
+maxiter           = 300
+ftol              = 1e-7
+round_t_mm        = 0.1      # final thicknesses rounded UP to this step
+round_A_mm2       = 1.0      # final areas rounded UP to this step
+min_stringers     = 2        # per skin, everywhere
+
+# -----------------------------------------------------------------------------
+[[design]]
+name   = "A"
+label  = "A: skin-dominated"
+philosophy = """Thick, tapered skins carry the bending; few, light stringers
+(pitch 0.25 m) only for panel stability later in WP5. Simple to build and
+inspect, few parts, but skin panels between stringers are wide."""
+stringer_pitch = 0.25
+stringer_bays  = [0.0, 0.2, 0.4, 0.6, 0.8]
+mid_spars      = []
+  [design.vars.t_skin]
+  eta = [0.0, 0.5, 1.0]
+  x0  = [0.020, 0.012, 0.004]
+  lo  = 0.002
+  hi  = 0.040
+  [design.vars.t_spar]
+  eta = [0.0, 0.5, 1.0]
+  x0  = [0.012, 0.008, 0.004]
+  lo  = 0.003
+  hi  = 0.030
+  [design.vars.A_str]
+  eta = [0.0]
+  x0  = [2.0e-4]
+  lo  = 1.0e-4
+  hi  = 4.0e-4
+
+# -----------------------------------------------------------------------------
+[[design]]
+name   = "B"
+label  = "B: stringer-dominated"
+philosophy = """Thin skins, many heavy stringers at a small pitch (0.12 m).
+Material is concentrated in the stringers; small panels are good for skin
+buckling (WP5), but many parts and fasteners."""
+stringer_pitch = 0.12
+stringer_bays  = [0.0, 0.2, 0.4, 0.6, 0.8]
+mid_spars      = []
+  [design.vars.t_skin]
+  eta = [0.0, 0.5, 1.0]
+  x0  = [0.005, 0.004, 0.003]
+  lo  = 0.002
+  hi  = 0.006
+  [design.vars.t_spar]
+  eta = [0.0, 0.5, 1.0]
+  x0  = [0.012, 0.008, 0.004]
+  lo  = 0.003
+  hi  = 0.030
+  [design.vars.A_str]
+  eta = [0.0, 0.5, 1.0]
+  x0  = [6.0e-4, 4.0e-4, 2.0e-4]
+  lo  = 1.0e-4
+  hi  = 1.5e-3
+
+# -----------------------------------------------------------------------------
+[[design]]
+name   = "C"
+label  = "C: spar-dominated, 3-spar inboard"
+philosophy = """Strong spars with heavy spar caps take the bending; a third
+spar at 0.45c out to eta = 0.40 (just outboard of the engine at eta = 0.35) makes
+the inboard box two-cell (torsion, web shear, fail-safe). Thin skins, few light
+stringers (pitch 0.20 m)."""
+stringer_pitch = 0.20
+stringer_bays  = [0.0, 0.2, 0.4, 0.6, 0.8]
+mid_spars      = [ { x_c = 0.45, eta_end = 0.40, t_factor = 1.0 } ]
+  [design.vars.t_skin]
+  eta = [0.0, 0.5, 1.0]
+  x0  = [0.008, 0.005, 0.003]
+  lo  = 0.002
+  hi  = 0.012
+  [design.vars.t_spar]
+  eta = [0.0, 0.5, 1.0]
+  x0  = [0.015, 0.010, 0.004]
+  lo  = 0.003
+  hi  = 0.035
+  [design.vars.A_str]
+  eta = [0.0]
+  x0  = [2.0e-4]
+  lo  = 1.0e-4
+  hi  = 4.0e-4
+  [design.vars.A_cap]
+  eta = [0.0, 0.5, 1.0]
+  x0  = [4.0e-3, 2.0e-3, 5.0e-4]
+  lo  = 0.0
+  hi  = 8.0e-3     # 80 cm2 per cap at most (realism, A11 box)

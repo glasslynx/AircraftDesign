@@ -1,0 +1,109 @@
+# =============================================================================
+#  WP4 aircraft input file  --  Group A11, AE2111-I
+#  Final WP3 design point (WP3.4, V4 of 2026-11-10): W/S 5,046 N/m2, AR 10.6.
+#  "WP3 T-par" = WP3 report, final-parameter table (generated/wp3_4_params.tex,
+#  "Final" column). "WP3 code" = WP3/wp3_4_codeV4/wp3_4_code (same numbers).
+#  Every number carries its source. Paths are relative to the WP4(A11) folder.
+# =============================================================================
+
+[planform]                    # WP3 T-par, final wing
+S            = 61.20          # reference area [m2]
+b            = 25.47          # span [m]
+c_root       = 3.652          # root chord (centreline) [m]
+c_tip        = 1.154          # tip chord [m]  (taper 0.316)
+sweep_c4_deg = 24.04          # quarter-chord sweep [deg]
+sweep_LE_deg = 26.34          # leading-edge sweep [deg]
+dihedral_deg = 2.60           # [deg]
+t_c          = 0.12           # SC(2)-0612
+airfoil_file = "inputs/airfoil/NASA SC2-0612 AIRFOIL.dat"
+y_root       = 0.0            # structural root station [m]; 0 = centreline (flow5 wing starts here)
+# Tip twist -2.0 deg (WP3 T-par) is inside the flow5 results; the structural model ignores it.
+
+[wingbox]
+x_front_spar = 0.20           # chord fraction, WP2 (front spar 0.20c)
+x_rear_spar  = 0.70           # chord fraction, WP2 (rear spar 0.70c)
+
+[material]                    # AL2024-T81 (brief); ASM Aerospace Specification Metals data sheet
+name    = "AL2024-T81"
+E       = 72.4e9              # [Pa]
+G       = 28.0e9              # [Pa]
+nu      = 0.33
+rho     = 2780.0              # [kg/m3]
+sigma_y = 450.0e6             # tensile yield [Pa]
+sigma_u = 485.0e6             # ultimate tensile [Pa]
+
+[masses]                      # WP3 T-par, final column (Torenbeek Class II)
+MTOM          = 31490.0       # [kg]
+OEM           = 19347.0       # [kg]
+payload_max   = 9302.0        # max structural payload (harmonic point) -> MZFM 28,649 kg
+payload_des   = 7200.0        # design payload (2,019 km mission), informative only
+MLM_fraction  = 0.955         # MLM / MTOM = 30,066 / 31,490 (WP3 T-par)
+m_wing_total     = 3270.0     # both wings [kg]; WP3 final Class II mass table (Torenbeek)
+x_wing_cg_frac   = 0.40       # chordwise CG of wing structure; WP3 code (Vos eq. 9.8: wing at 0.4 MAC)
+
+[engine]                      # GE CF34-8E5, two under the wing (WP3.1)
+n_engines        = 2
+m_engine         = 1823.5     # per side: 1,428 dry + nacelle group 791/2 (WP3 final Class II table) [kg]
+y_engine         = 4.457      # lateral position y_e = 0.35 b/2 [m]; WP3 T-par (4.46)
+x_cg_rel_LEMAC   = -1.779     # engine CG x from LEMAC (+ aft) [m]; WP3 code (Vos Ex. 8.15: inlet 0.9 l_n
+                              #   ahead of the front spar, CG at 0.4 l_n, l_n = 3.87 m) -> 1.38 m ahead of the local LE
+z_thrust_below   = 1.00       # thrust line below the chord plane [m]; WP3 three-view code: nacelle centre
+                              #   0.998 m below the wing chord at y_e (0.15 m gap + D_n/2 = 0.68 m)
+T0_per_engine    = 59.7e3     # take-off thrust per engine [N]; WP3 T-par (EASA TCDS)
+thrust_lapse_exp = 0.75       # T = T0 (rho/rho0)^exp  (same choice as the reference code)
+thrust_mode      = "max_lapsed"   # "max_lapsed" | "zero"
+
+[main_gear]                   # WP3 landing-gear layout: main gear on the wing, behind the rear spar
+include      = true           # point mass on the wing at the gear trunnion (gear retracted in flight)
+m_total      = 1051.0         # both legs [kg]; WP3 final Class II table
+y            = 2.403          # lateral position = track/2 = 4.81/2 [m]; WP3 T-par / three-view code
+x_rel_LEMAC  = 1.381          # x from LEMAC (+ aft) [m] = x_MLG 15.18 m - X_LEMAC 13.80 m (WP3 T-par);
+                              #   = 0.88 c at y = 2.40 m (between rear spar and TE)
+
+[fuel]
+# Wet wing box. Two ways to describe it:
+#  * stl_file = "path.stl": flow5 STL export of the box (as in the reference code). The mesh may be the
+#    left (y < 0) or right half wing; it is mirrored if needed.
+#  * stl_file = "": analytic box (the WP3 method): real SC(2)-0612 section between the spars, c(y)^2
+#    scaling, from tank_eta_start to tank_eta_end. Used until the flow5 STL is supplied.
+stl_file         = ""
+tank_eta_start   = 0.0        # analytic box only: start of the tank, fraction of b/2 (0 = centreline,
+                              #   so the centre box is included, as in WP3: wing + centre + inboard = 7.05 m3)
+tank_eta_end     = 0.83       # analytic box only: end of the wing tank (WP3 tank span 0.17-0.83 b/2)
+density          = 800.0      # [kg/m3], WP3 code
+usable_factor    = 0.85       # WP3 code TANK_USABLE (structure, systems, unusable fuel)
+fill_strategy    = "uniform"  # "uniform" | "inboard_first" | "outboard_first"
+# Fuel that does not fit in the wing goes to a fuselage tank: no wing bending relief.
+# At MTOW with MPW the fuel is 31,490 - 19,347 - 9,302 = 2,841 kg, so it all fits in the wing.
+
+[aero]
+# Reader App. B: two flow5 strip exports at alpha = 0 and 10 deg; any C_L follows by linear interpolation.
+spanwise_file_0  = "inputs/flow5/Final_Wing-(NASASC(2)-0612)_a=0.00_v=10.00ms.txt"
+spanwise_file_10 = "inputs/flow5/Final_Wing-(NASASC(2)-0612)_a=10.00_v=10.00ms.txt"
+polar_file       = ""         # optional flow5 wing polar (plot only); "" = use the two exports
+prandtl_glauert    = true     # PG on the lift slope -> angle of attack
+cm_prandtl_glauert = false    # PG also on section Cm (1/beta)
+
+[vn]                          # WP3 report / WP2 high-lift design
+CL_max_clean   = 1.852        # WP3 T-par (DATCOM)
+CL_max_TO      = 2.604        # WP3 T-par (DATCOM + HLD)
+CL_max_land    = 2.926        # WP3 T-par (DATCOM + HLD)
+CN_min         = -1.852       # reader App. E: C_L,min = -C_L,max (no WP3 value)
+V_C_EAS        = 127.1        # V_C = cruise speed 228.3 m/s TAS at FL350 (M 0.77), as in WP3 -> EAS [m/s]
+M_C            = 0.77         # cruise Mach (REQ-CRUISE-01)
+dM_dive        = 0.07         # M_D = M_C + 0.07 (same as the reference code; see README_A11 sec. 4)
+VD_VC_ratio    = 1.25         # V_D <= 1.25 V_C  -> 158.9 m/s EAS at sea level (WP3: 158.6)
+n_flaps_max    = 2.0
+altitudes_m    = [0.0, 10668.0]   # sea level and FL350 (cruise)
+safety_factor  = 1.5          # CS 25.303
+
+[requirements]
+tip_deflection_frac_span = 0.15   # |v_tip| <= 0.15 b (full span)
+tip_twist_deg            = 10.0   # |theta_tip| <= 10 deg
+stiffness_at_ultimate    = false  # stiffness checked at LIMIT load
+strength_check           = true   # yield check at ULTIMATE load
+k_shear                  = 1.5    # tau_max = k_v * tau_avg in spar webs (Appendix F.1)
+
+[numerics]
+n_stations       = 401        # spanwise grid points for analysis/plots
+n_stations_opt   = 121        # coarser grid inside the optimiser

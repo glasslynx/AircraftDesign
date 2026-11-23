@@ -3,15 +3,36 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Fo-rex Gump</title>
+<title>Fo-rex Gump - free dino runner game in your browser</title>
+<meta name="description" content="Fo-rex Gump is a free endless runner: jump and duck as a little dinosaur, beat bosses like the Kraken and the Sandworm, unlock 11 worlds, pets, hats and trails. Plays in any browser, no download.">
+<meta name="keywords" content="dino game, dinosaur runner, endless runner, browser game, free online game, jump game, Fo-rex Gump">
+<meta name="theme-color" content="#535353">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Fo-rex Gump - run, Rex, run!">
+<meta property="og:description" content="A free dino runner with bosses, 11 worlds, pets and a mystery egg. Play instantly in your browser.">
+<meta property="og:image" content="og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23f7f7f7'/%3E%3Cg fill='%23535353'%3E%3Crect x='30' y='8' width='26' height='18'/%3E%3Crect x='12' y='24' width='30' height='22'/%3E%3Crect x='4' y='28' width='10' height='8'/%3E%3Crect x='40' y='30' width='8' height='4'/%3E%3Crect x='16' y='46' width='6' height='12'/%3E%3Crect x='30' y='46' width='6' height='12'/%3E%3C/g%3E%3Crect x='36' y='12' width='5' height='5' fill='%23f7f7f7'/%3E%3C/svg%3E">
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "VideoGame", "name": "Fo-rex Gump",
+  "description": "A free endless dino runner with bosses, worlds, pets and cosmetics. Runs in any web browser.",
+  "genre": ["Endless runner", "Arcade"], "gamePlatform": "Web browser", "applicationCategory": "Game",
+  "operatingSystem": "Any", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "EUR"}}
+</script>
 <style>
   html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #000; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   canvas { display: block; touch-action: none; user-select: none; -webkit-user-select: none; outline: none; }
 </style>
 <!-- On CrazyGames or Poki, add their SDK script tag here; the game finds it by itself. -->
 </head>
 <body>
-<canvas id="game" tabindex="0"></canvas>
+<h1 class="sr">Fo-rex Gump - run, Rex, run!</h1>
+<p class="sr">A free endless runner game for your browser. Jump over cacti, duck under birds, fight bosses like the Kraken,
+the Pumpkin King and the Sandworm, collect coins and diamonds, and unlock worlds, pets, hats, trails and skins.
+Controls: Space or Up to jump, Down to duck, X for slow-motion, Esc to pause. On a phone: tap to jump, hold the left side to duck.</p>
+<noscript><p style="color:#fff;font-family:monospace;padding:20px">Fo-rex Gump needs JavaScript to run.</p></noscript>
+<canvas id="game" tabindex="0" aria-label="Fo-rex Gump game"></canvas>
 <script>
 "use strict";
 // =====================================================================
@@ -830,13 +851,15 @@ class Game {
   }
   updateOrb(v, box) {
     const o = this.orb; if (!o) return;
-    o.t++; o.x -= v * 0.6; o.y = Math.min(GROUND - 22, o.y + o.vy);
-    if (overlap(box, [o.x - 12, o.y - 12, o.x + 12, o.y + 12])) {
+    o.t++; o.x -= v * 0.8;
+    if (o.y < GROUND - 55) { o.y += o.vy; o.vy += 0.15; }              // falls, then floats at jump height
+    else o.y = GROUND - 55 + 6 * Math.sin(o.t * 0.15);
+    if (overlap(box, [o.x - 13, o.y - 13, o.x + 13, o.y + 13])) {
       const [name, color] = choice(BOOSTS), t = Math.round(BOOST_TIME * (this.save.lucky ? 1.5 : 1));
       this.boost = [name, t, color, t]; this.orb = null;
       this.showBanner(name + "!", 90, color); this.burst(this.dinoX + 25, this.dinoY - 25, 40, CONFETTI, 6, 40);
       Audio.sfx("power");
-    } else if (o.x < -20) this.orb = null;
+    } else if (o.x < -30) this.orb = null;
   }
 
   // ------------------------------------------------------------ bosses
@@ -1915,7 +1938,7 @@ function drawSceneText(game, bg, fg) {
     });
     T(W / 2, 238, `click or arrows + Enter   Space jump   Down duck   X slow-mo   F fullscreen   world: ${game.land().name}`, fg, 10);
     T(W - 8, 292, VERSION, mix(bg, fg, 0.5), 9, false, "right");
-    if (game.save.trophy) drawTrophy(118, 150, 1.0, fg);
+    if (game.save.trophy) drawTrophy(104, 160, 1.0, fg);
     drawStreak(game, 16, 14, bg, fg);
   } else if (game.state === "over") {
     R(W / 2 - 320, 46, W / 2 + 320, 194, mix(bg, fg, 0.06), mix(bg, fg, 0.25), 1);
@@ -1924,11 +1947,17 @@ function drawSceneText(game, bg, fg) {
     if (game.newHigh) T(W / 2, 122, "NEW HIGH SCORE!", "#ff5c5c", 16, true);
     else if (game.save.daily_streak) T(W / 2, 122, `daily streak: day ${game.save.daily_streak}/7  -  come back tomorrow for +${25 * Math.min(7, game.save.daily_streak + 1)} coins`, "#5cd65c", 11, true);
     if (!game.shake) {
-      button(game, W / 2 - 300, 140, W / 2 - 160, 166, "PLAY AGAIN", fg, bg, () => Ads.breakThen(() => game.startRun()));
-      if (!game.continued) button(game, W / 2 - 150, 140, W / 2 + 10, 166, "AD: CONTINUE", fg, bg, () => adContinue(game), "#5cd65c");
-      if (!game.doubled && game.runCoins > 0) button(game, W / 2 + 20, 140, W / 2 + 180, 166, "AD: 2x COINS", fg, bg, () => adDouble(game), "#e6a700");
-      button(game, W / 2 + 190, 140, W / 2 + 300, 166, "MENU", fg, bg, () => game.goMenu());
-      T(W / 2, 182, "Space: again   C: continue (ad)   D: double coins (ad)   M / Esc: menu", fg, 10);
+      if (ADS_ENABLED) {
+        button(game, W / 2 - 300, 140, W / 2 - 160, 166, "PLAY AGAIN", fg, bg, () => Ads.breakThen(() => game.startRun()));
+        if (!game.continued) button(game, W / 2 - 150, 140, W / 2 + 10, 166, "AD: CONTINUE", fg, bg, () => adContinue(game), "#5cd65c");
+        if (!game.doubled && game.runCoins > 0) button(game, W / 2 + 20, 140, W / 2 + 180, 166, "AD: 2x COINS", fg, bg, () => adDouble(game), "#e6a700");
+        button(game, W / 2 + 190, 140, W / 2 + 300, 166, "MENU", fg, bg, () => game.goMenu());
+        T(W / 2, 182, "Space: again   C: continue (ad)   D: double coins (ad)   M / Esc: menu", fg, 10);
+      } else {
+        button(game, W / 2 - 150, 140, W / 2 - 10, 166, "PLAY AGAIN", fg, bg, () => game.startRun());
+        button(game, W / 2 + 10, 140, W / 2 + 150, 166, "MENU", fg, bg, () => game.goMenu());
+        T(W / 2, 182, "Space: play again     M / Esc: menu", fg, 10);
+      }
     }
   }
   if (game.state === "running" && game.paused) {
@@ -1945,13 +1974,18 @@ function drawSceneText(game, bg, fg) {
 // daily streak card: a flame, the day, 7 pips and tomorrow's reward
 function drawStreak(game, x, y, bg, fg) {
   const st = game.save.daily_streak || 0; if (!st) return;
-  R(x, y, x + 168, y + 52, mix(bg, fg, 0.06), mix(bg, "#ff9f1a", 0.6), 1.5);
-  const fx = x + 16, fy = y + 30, flick = Math.sin(game.tick * 0.3) * 1.5;
+  const bw = 176, bh = 62;
+  R(x, y, x + bw, y + bh, mix(bg, fg, 0.06), mix(bg, "#ff9f1a", 0.6), 1.5);
+  const fx = x + 17, fy = y + 34, flick = Math.sin(game.tick * 0.3) * 1.5;
   P([fx - 9, fy + 10, fx - 10, fy - 2, fx - 4, fy - 10, fx - 2, fy - 4, fx + 1, fy - 16 + flick, fx + 9, fy - 3, fx + 9, fy + 10], "#ff7b1a");
   P([fx - 5, fy + 10, fx - 5, fy + 2, fx, fy - 6 + flick, fx + 5, fy + 2, fx + 5, fy + 10], "#ffd23f");
-  T(x + 34, y + 13, `DAILY STREAK  day ${st}/7`, "#ff9f1a", 11, true, "left");
-  for (let i = 0; i < 7; i++) R(x + 34 + i * 18, y + 24, x + 48 + i * 18, y + 32, i < st ? "#ff9f1a" : mix(bg, fg, 0.15));
-  T(x + 34, y + 43, st < 7 ? `tomorrow: +${25 * (st + 1)} coins` + (st + 1 === 7 ? " +2 gems" : "") : "max streak: +175 coins/day", mix(bg, fg, 0.7), 9, false, "left");
+  const tx = x + 34, tw = bw - 34 - 8;                       // text column inside the box
+  T(tx, y + 12, "DAILY STREAK", "#ff9f1a", 10, true, "left");
+  T(x + bw - 8, y + 12, `day ${st}/7`, "#ff9f1a", 10, true, "right");
+  const pip = (tw - 6 * 3) / 7;
+  for (let i = 0; i < 7; i++) R(tx + i * (pip + 3), y + 24, tx + i * (pip + 3) + pip, y + 32, i < st ? "#ff9f1a" : mix(bg, fg, 0.15));
+  T(tx, y + 44, st < 7 ? "tomorrow:" : "max streak!", mix(bg, fg, 0.7), 9, false, "left");
+  T(tx, y + 55, st < 7 ? `+${25 * (st + 1)} coins` + (st + 1 === 7 ? " +2 gems" : "") : "+175 coins a day", mix(bg, fg, 0.8), 9, true, "left");
 }
 function drawTrophy(cx, by, s, fg) {
   const g = "#ffcc00", d = "#c99700";
@@ -2268,9 +2302,11 @@ function drawBarDeco(g) {
 // Works with the CrazyGames or Poki SDK when the game runs on their site
 // (add their script tag to the page). Anywhere else a short placeholder
 // "ad" is shown so the reward flow can be tested.
+const ADS_ENABLED = false;          // ads are switched off for now; set to true to bring them back
 const Ads = {
   kind: "none", sdk: null, showing: false, placeholder: null, runs: 0,
   async init() {
+    if (!ADS_ENABLED) return;
     try {
       if (window.CrazyGames && window.CrazyGames.SDK) { this.kind = "crazygames"; this.sdk = window.CrazyGames.SDK; if (this.sdk.init) await this.sdk.init(); }
       else if (window.PokiSDK) { this.kind = "poki"; await window.PokiSDK.init(); if (window.PokiSDK.gameLoadingFinished) window.PokiSDK.gameLoadingFinished(); }
@@ -2280,7 +2316,7 @@ const Ads = {
   gameplayStop() { try { if (this.kind === "crazygames") this.sdk.game.gameplayStop(); else if (this.kind === "poki") window.PokiSDK.gameplayStop(); } catch (e) {} },
   mute(on) { if (Audio.master) Audio.master.gain.value = on ? 0 : 0.9; },
   rewarded(done) {
-    if (this.showing) return;
+    if (!ADS_ENABLED || this.showing) return;
     this.showing = true; this.mute(true);
     const finish = ok => { this.showing = false; this.placeholder = null; this.mute(false); done(!!ok); };
     try {
@@ -2416,8 +2452,8 @@ function handleKey(g, key, down) {
     else if (k === "h") g.useHeadstart();
   } else if (st === "over" && !g.shake) {
     if (k === " " || k === "arrowup" || k === "w" || k === "enter") Ads.breakThen(() => g.startRun());
-    else if (k === "c") adContinue(g);
-    else if (k === "d") adDouble(g);
+    else if (k === "c" && ADS_ENABLED) adContinue(g);
+    else if (k === "d" && ADS_ENABLED) adDouble(g);
     else if (k === "m" || k === "escape" || k === "q") g.goMenu();
   }
 }

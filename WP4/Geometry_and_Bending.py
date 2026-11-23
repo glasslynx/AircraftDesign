@@ -11,7 +11,7 @@ from geometry import spar_height
 
 
 y = 
-c= 3.866 - 0.19798y #chord length as a function of y
+c= 3.866 - 0.19798*y #chord length as a function of y
 
 t_frontspar = #thickness of spar
 t_rearspar = 
@@ -75,7 +75,7 @@ print(zpositionLOWstringers(xref_frontspar, xref_rearspar, wingbox_zref_dimensio
 A_f_spar = t_frontspar * h_frontspar #calculating the Area
 A_r_spar = t_rearspar * h_rearspar
 
-Length_Skin = lengthSkingWingbox(wingbox_zref_dimension, xref_frontspar, xref_rearspar):
+Length_Skin = lengthSkinWingbox(wingbox_zref_dimension, xref_frontspar, xref_rearspar):
 A_up_skin = t_upskin * Length_Skin[0]
 A_low_skin = t_lowskin * Length_Skin[1]
 

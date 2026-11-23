@@ -9,7 +9,8 @@ from geometry import spar_height
 #the initial position will be given as a function of x_ref amd z_ref where x_ref starts at the leading edge and z_ref at the chord line
 #wingbox dimension parameters
 
-y = y
+
+y = 
 c= 3.866 - 0.19798y #chord length as a function of y
 
 t_frontspar = #thickness of spar
@@ -84,7 +85,7 @@ A_total = A_up_skin + A_low_skin + A_f_spar + A_r_spar + len(xref_up_stringer)*A
 #x-centroid position from the leading edge
 x_c = (A_f_spar*xref_frontspar + A_r_spar*xref_rearspar + (A_up_skin + A_low_skin)*(xref_rearspar - xref_frontspar))/A_total
 #z-centroid position from the chord
-
+z_c = (A_f_spar*zref_frontspar + A_r_spar*zref_rearspar + (A_up_skin + A_low_skin)*(zref_rearspar - zref_frontspar))/A_total
 
 #the coordinate system is x from leading edge to trailing edge (0 at centroid)
 

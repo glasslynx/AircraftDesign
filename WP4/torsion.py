@@ -23,7 +23,7 @@ def torsion_constant(corners, t):
     P = np.asarray(corners, float)[[0, 2, 3, 1]]  #Converts the list in usable decimals in the following order: UL,BL,UR,BR -> UL,UR,BR,BL
     x, z = P[:, 0], P[:, 1] #Splits the coordinates in two columns with either containing one of the coordinates
     A = 0.5 * abs(np.dot(x, np.roll(z, -1)) - np.dot(z, np.roll(x, -1))) #Shoelace formula for the area of a polygon
-    s = sum(np.linalg.norm(P[(i + 1) % 4] - P[i]) / t[i] for i in range(4)) 
+    s = sum(np.linalg.norm(P[(i + 1) % 4] - P[i]) / t[i] for i in range(4)) #Calculate the corner vectors length divided by the thickness and adds them together
     return 4.0 * A ** 2 / s #Output torsion constant
 
 J = torsion_constant(corners, t)  

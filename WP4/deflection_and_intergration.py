@@ -15,14 +15,13 @@ Solution steps (Appendix D.2):
 Integrals: scipy.integrate.quad 
 Callable functions: scipy.interpolate.interp1d, kind="cubic" 
 
-Conventions (agree these with the WP4.1 group):
+Conventions:
     y      spanwise coordinate from root (0) to tip (b/2) of the equivalent
            unswept wing (Appendix A.3) [m]
     v      displacement in z, normal to the wing box symmetry axis,
            positive upwards [m]
     theta  rotation (twist), positive nose-up [rad]
-    M_x, T from WP4.1, with the reader's sign convention (Appendix C):
-           an upward lift load gives a NEGATIVE M_x.
+    M_x, T from WP4.1 
 
 Stiffness requirements (WP4.2):
     - tip displacement shall not exceed 15% of the total span b
@@ -46,8 +45,8 @@ def integral_from_root(f, y_points):
     integral_0^y_i f dy is built as the sum of quad integrals over the
     intervals [y_0, y_1], [y_1, y_2], ..., [y_(i-1), y_i]. This gives the same
     result as integrating from 0 every time, but each part of the span is
-    integrated only once, which keeps the nested integrals fast.
-    Tip: include any spanwise positions where the stiffness jumps (e.g. a
+    integrated only once, which keeps the integrals fast.
+    Include spanwise positions where the stiffness jumps (e.g. a
     change in stringer number) in y_points, so quad never has to integrate
     across a discontinuity.
     """
@@ -61,12 +60,12 @@ def integral_from_root(f, y_points):
 
 
 def make_function(y_points, values):
-    """Turn point data into a callable function (Appendix B.3: interp1d, cubic)."""
+    """Turn point data into a callable function"""
     return sp.interpolate.interp1d(y_points, values, kind="cubic", fill_value="extrapolate")
 
 
 def bending_deflection(y_points, M, Ixx, E=E):
-    """Bending slope and displacement, Appendix D.2.
+    """Bending slope and displacement.
 
     y_points : spanwise stations, from 0 (root) to b/2 (tip)
     M        : callable M_x(y) [Nm], from WP4.1
@@ -84,7 +83,7 @@ def bending_deflection(y_points, M, Ixx, E=E):
 
 
 def twist(y_points, T, J, G=G):
-    """Twist distribution, Appendix D.2.
+    """Twist distribution.
 
     T : callable T(y) [Nm], from WP4.1
     J : callable J(y) [m^4], from the section-property module
@@ -109,9 +108,9 @@ def check_requirements(v, theta, b):
 
 
 def plot_results(cases, b, n_plot=500):
-    """Displacement and twist plots for the report (deliverable WP4.2 d).
+    """Displacement and twist plots for the report.
 
-    cases : list of (label, v, theta) tuples, e.g. one per load case
+    cases : list of (label, v, theta), e.g. one per load case
             for one design option, so each figure shows several load cases.
     """
     y = np.linspace(0.0, b / 2, n_plot)

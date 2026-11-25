@@ -4,7 +4,7 @@ import math
 # --- Inputs ---
 y =                  # spanwise position [m]
 c = 3.866 - 0.19798 * y  # chord length as a function of y [m]
-y_third_spar = 5.0       # y position at which the third spar stops [m]
+y_third_spar =      # y position at which the third spar stops [m]
 
 # Thicknesses of spars and skins [m]
 t_frontspar = 

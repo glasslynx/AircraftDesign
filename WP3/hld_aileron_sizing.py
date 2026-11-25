@@ -561,6 +561,8 @@ def main():
     else:
         dat_path = airfoil_dat if os.path.isabs(airfoil_dat) else \
             os.path.join(os.path.dirname(os.path.abspath(__file__)), airfoil_dat)
+        if not os.path.isfile(dat_path):   # fall back to the copy in WP2/
+            dat_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "WP2", os.path.basename(airfoil_dat))
         if not os.path.isfile(dat_path):
             raise FileNotFoundError(f"Airfoil file not found: {dat_path}\n"
                                     f"Put it next to this script, give an absolute path, or set DeltaY_user.")

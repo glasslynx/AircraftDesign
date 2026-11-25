@@ -44,7 +44,7 @@ def _delta_y():
     if _DY is None:
         path = H.airfoil_dat if os.path.isabs(H.airfoil_dat) else os.path.join(HERE, H.airfoil_dat)
         if not os.path.isfile(path):
-            path = os.path.join(HERE, "..", "wp2-final", "code", "NASA SC2-0612 AIRFOIL.dat")
+            path = os.path.join(HERE, "..", "WP2", "NASA SC2-0612 AIRFOIL.dat")
         _DY = H.delta_y_from_dat(path)
     return _DY
 

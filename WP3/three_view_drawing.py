@@ -72,9 +72,9 @@ WING_ROOT_Z = None        # m, root-chord plane at the centreline; None -> low w
 DIHEDRAL_W = 2.60         # deg (WP2 final)
 TC_ROOT_W, TC_TIP_W = 0.12, 0.12   # SC(2)-0612
 REAR_SPAR = 0.70          # x/c of the rear spar (WP2; front spar 0.20 in drag_geometry_inputs)
-AIRFOIL_FILE = os.path.join(HERE, "NASA SC2-0612 AIRFOIL.dat")   # same folder, else the WP2-final copy
+AIRFOIL_FILE = os.path.join(HERE, "NASA SC2-0612 AIRFOIL.dat")   # same folder, else the WP2 copy
 if not os.path.isfile(AIRFOIL_FILE):
-    AIRFOIL_FILE = os.path.join(HERE, "..", "wp2-final", "code", "NASA SC2-0612 AIRFOIL.dat")
+    AIRFOIL_FILE = os.path.join(HERE, "..", "WP2", "NASA SC2-0612 AIRFOIL.dat")
 
 # --- Nacelle vertical position -----------------------------------------------------
 NAC_GAP = 0.15            # ASSUMED m, nacelle top below the local wing lower surface

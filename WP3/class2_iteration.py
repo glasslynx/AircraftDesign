@@ -23,7 +23,7 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-for _p in (HERE, os.path.join(HERE, "..", "knowledge")):
+for _p in (HERE, os.path.join(HERE, "..", "WP1"), os.path.join(HERE, "..", "knowledge")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -46,9 +46,9 @@ V_WING_REF, S_WING_REF = 5.49, 67.91   # m^3 wing-tank capacity at S_ref (WP2 in
 # integral tanks in the wing box (front spar 0.20c to rear spar 0.70c, SC(2)-0612)
 TANK_USABLE = 0.85      # usable fraction (structure, systems, unusable fuel; WP2 report)
 TANK_ETA = (0.17, 0.83) # WP2 wing-tank span, fraction of b/2
-AIRFOIL_FILE = os.path.join(HERE, "NASA SC2-0612 AIRFOIL.dat")   # same folder, else the WP2-final copy
+AIRFOIL_FILE = os.path.join(HERE, "NASA SC2-0612 AIRFOIL.dat")   # same folder, else the WP2 copy
 if not os.path.isfile(AIRFOIL_FILE):
-    AIRFOIL_FILE = os.path.join(HERE, "..", "wp2-final", "code", "NASA SC2-0612 AIRFOIL.dat")
+    AIRFOIL_FILE = os.path.join(HERE, "..", "WP2", "NASA SC2-0612 AIRFOIL.dat")
 MTOM_START = G.MTOM     # kg, WP3.1 value (30,845)
 TOL = 0.001             # relative OEM change for convergence (Lecture 5: < 1 %)
 MAX_IT = 30

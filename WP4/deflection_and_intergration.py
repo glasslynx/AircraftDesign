@@ -12,8 +12,8 @@ Solution steps (Appendix D.2):
     dv/dy(y) = - integral_0^y  M_x / (E I_xx) dy
     v(y)     =   integral_0^y  dv/dy dy
     theta(y) =   integral_0^y  T / (G J) dy
-Integrals: scipy.integrate.quad (Appendix C.1).
-Callable functions from point data: scipy.interpolate.interp1d, kind="cubic" (Appendix B.3).
+Integrals: scipy.integrate.quad 
+Callable functions: scipy.interpolate.interp1d, kind="cubic" 
 
 Conventions (agree these with the WP4.1 group):
     y      spanwise coordinate from root (0) to tip (b/2) of the equivalent

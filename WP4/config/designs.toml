@@ -1,0 +1,69 @@
+# =============================================================================
+#  WP4.3 wing-box design options, group A11. CHOSEN BY HAND, then VERIFIED by
+#  run_wp4.py against the requirements (no optimiser in WP4; that is WP5 work).
+#
+#  Each [[design]] is one design philosophy. Spanwise distributions are given at
+#  breakpoints eta = y / (b/2):
+#     X = { eta = [...], val = [...] }            linear in between (thicknesses, areas)
+#     n = { eta = [...], val = [...] }            stepwise for stringer counts: the
+#                                                 value holds until the next eta
+#  A single number means "constant over the span".
+#  Units: thicknesses in mm, areas in mm2, counts per skin.
+#
+#  Optional keys (default in brackets):
+#     t_skin_bottom_mm      [= t_skin_top_mm]
+#     t_rear_spar_mm        [= t_front_spar_mm]
+#     n_stringers_bottom    [= n_stringers_top]
+#     A_stringer_bottom_mm2 [= A_stringer_top_mm2]
+#     A_cap_mm2             [0]  area of EACH of the 4 corner spar caps (point areas)
+#     [design.mid_spar]     x_c, eta_end, t_mm [= t_front_spar_mm]
+#
+#  The values below are the A/B/C sizes of the 18 Nov WP4(A11) tool (rounded up to
+#  0.1 mm / 1 mm2 there), so the two codes can be compared one to one. Change them
+#  freely: run_wp4.py reports whether every requirement is still met.
+#  Stringer counts follow the pitch of each philosophy: n = floor(box width / pitch) - 1,
+#  at least 2, evaluated at the inboard end of each 0.2 b/2 bay.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+[[design]]
+name   = "A"
+label  = "A: skin-dominated"
+philosophy = """Thick, tapered skins carry the bending; few, light stringers
+(pitch 0.25 m) only for panel stability later in WP5. Simple to build and
+inspect, few parts, but skin panels between stringers are wide."""
+t_skin_top_mm      = { eta = [0.0, 0.5, 1.0], val = [9.5, 5.7, 2.0] }
+t_front_spar_mm    = { eta = [0.0, 0.5, 1.0], val = [3.5, 3.6, 3.0] }
+n_stringers_top    = { eta = [0.0, 0.2, 0.4, 0.6, 0.8], val = [6, 5, 4, 3, 2] }
+A_stringer_top_mm2 = 100.0
+A_cap_mm2          = 0.0
+
+# -----------------------------------------------------------------------------
+[[design]]
+name   = "B"
+label  = "B: stringer-dominated"
+philosophy = """Thin skins, many heavy stringers at a small pitch (0.12 m).
+Material is concentrated in the stringers; small panels are good for skin
+buckling (WP5), but many parts and fasteners."""
+t_skin_top_mm      = { eta = [0.0, 0.5, 1.0], val = [6.0, 4.9, 2.1] }
+t_front_spar_mm    = { eta = [0.0, 0.5, 1.0], val = [3.6, 3.7, 3.1] }
+n_stringers_top    = { eta = [0.0, 0.2, 0.4, 0.6, 0.8], val = [14, 12, 10, 7, 5] }
+A_stringer_top_mm2 = { eta = [0.0, 0.5, 1.0], val = [542.0, 101.0, 101.0] }
+A_cap_mm2          = 0.0
+
+# -----------------------------------------------------------------------------
+[[design]]
+name   = "C"
+label  = "C: spar-dominated, 3-spar inboard"
+philosophy = """Strong spars with heavy spar caps take the bending; a third
+spar at 0.45c out to eta = 0.40 (just outboard of the engine at eta = 0.35) makes
+the inboard box two-cell (torsion, web shear, fail-safe). Thin skins, few light
+stringers (pitch 0.20 m)."""
+t_skin_top_mm      = { eta = [0.0, 0.5, 1.0], val = [2.9, 4.8, 2.0] }
+t_front_spar_mm    = { eta = [0.0, 0.5, 1.0], val = [3.0, 3.4, 3.0] }
+n_stringers_top    = { eta = [0.0, 0.2, 0.4, 0.6, 0.8], val = [8, 6, 5, 4, 3] }
+A_stringer_top_mm2 = 100.0
+A_cap_mm2          = { eta = [0.0, 0.5, 1.0], val = [5671.0, 0.0, 0.0] }
+  [design.mid_spar]
+  x_c     = 0.45
+  eta_end = 0.40

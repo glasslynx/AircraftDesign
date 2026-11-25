@@ -1,0 +1,11 @@
+check,value,reference,rel_error,ok
+"lift equilibrium 2 int L' dy / (n W), worst case",1.0000384769156443,1.0,3.847691564429212e-05,True
+root shear S(0) = total load on the half wing (LC-01),131845.60672987957,131845.6067298795,4.4148350754470833e-16,True
+wing mass per half wing [kg],1635.0,1635.0,0.0,True
+fuel mass per half wing at MTOW [kg],1421.2419194181311,1420.5,0.0005222945569385054,True
+"usable wing-tank volume, both wings [m3] (WP3: 7.05)",7.052131613503805,7.05,0.0003023565253624707,True
+cantilever tip deflection w L^4 / (8 EI) [m],0.4541164603081946,0.4541164603081944,3.6671970353321375e-16,True
+constant-torque tip twist T L / (G J) [rad],0.004548214285714288,0.004548214285714286,5.721113937261555e-16,True
+tapered-EI tip deflection vs Mohr integral [m] (grid convergence),0.5235984184109678,0.5235989860551021,1.0841200030591625e-06,True
+one-cell J vs 4 A^2 / (sum s/t) [m4],0.004037414465363596,0.004037414465363596,0.0,True
+two-cell J with a very thin mid spar = one-cell J [m4],0.004037414465447811,0.004037414465363596,2.0858585104148815e-11,True

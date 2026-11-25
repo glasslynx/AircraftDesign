@@ -1,13 +1,13 @@
 #Imports
 import numpy as np
-from Geometry_and_Bending import corners, y, t_upskin, t_rearspar, t_lowskin, t_frontspar, t_midspar, xref_frontspar, xref_midspar, xref_rearspar, y_mid_end
+from Geometry_and_Bending import corners, y, t_upskin, t_rearspar, t_lowskin, t_frontspar, t_thirdspar, xref_frontspar, xref_midspar, xref_rearspar, y_third_spar
 
 #Middle spar
 f_mid = (xref_midspar - xref_frontspar) / (xref_rearspar - xref_frontspar) #Position of the middle spar between the front and rear spar
 
 #Wall thicknesses in the order top, right, bottom, left
 t = [t_upskin, t_rearspar, t_lowskin, t_frontspar] #[m]
-t_mid = t_midspar #[m]
+t_mid = t_thirdspar #[m]
 
 #Torsion constant calculation
 #Uses corners as input for the corners and t for the thicknesses
@@ -49,7 +49,7 @@ def torsion_constant(corners, t, t_mid=None):
     return 1.0 / sol[2] #Output torsion constant, two cells: J = T / (G*dtheta/dy)
 
 #Torsion constant at the y of Geometry_and_Bending
-if y <= y_mid_end:
+if y <= y_third_spar:
     J = torsion_constant(corners, t, t_mid) #With middle spar
 else:
     J = torsion_constant(corners, t) #Without middle spar

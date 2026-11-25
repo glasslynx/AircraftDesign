@@ -1,9 +1,10 @@
 #Imports
 import numpy as np
-from Geometry_and_Bending import corners, y, t_upskin, t_rearspar, t_lowskin, t_frontspar, t_thirdspar, xref_frontspar, xref_midspar, xref_rearspar, y_third_spar
+from Geometry_and_Bending import corners, y, t_upskin, t_rearspar, t_lowskin, t_frontspar, t_thirdspar, xref_frontspar, xref_thirdspar, xref_rearspar, y_third_spar
+
 
 #Middle spar
-f_mid = (xref_midspar - xref_frontspar) / (xref_rearspar - xref_frontspar) #Position of the middle spar between the front and rear spar
+f_mid = (xref_thirdspar - xref_frontspar) / (xref_rearspar - xref_frontspar) #Position of the middle spar between the front and rear spar
 
 #Wall thicknesses in the order top, right, bottom, left
 t = [t_upskin, t_rearspar, t_lowskin, t_frontspar] #[m]

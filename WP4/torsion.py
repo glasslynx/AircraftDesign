@@ -1,10 +1,9 @@
 #Imports
 import numpy as np
-from Geometry_and_Bending import corners, y, t_upskin, t_rearspar, t_lowskin, t_frontspar, t_thirdspar, xref_frontspar, xref_thirdspar, xref_rearspar, y_third_spar
-
+from Geometry_and_Bending import (corners_func, make_function, y_points, y_third_spar, t_upskin, t_rearspar, t_lowskin, t_frontspar, t_thirdspar)
 
 #Middle spar
-f_mid = (xref_thirdspar - xref_frontspar) / (xref_rearspar - xref_frontspar) #Position of the middle spar between the front and rear spar
+f_mid = (0.45 - 0.2) / (0.7 - 0.2) #Position of the middle spar between the front and rear spar (chord fractions)
 
 #Wall thicknesses in the order top, right, bottom, left
 t = [t_upskin, t_rearspar, t_lowskin, t_frontspar] #[m]
@@ -12,13 +11,10 @@ t_mid = t_thirdspar #[m]
 
 #Torsion constant calculation
 #Uses corners as input for the corners and t for the thicknesses
-#Example inputs:
-#corners = [(-0.25,  0.05),   # upper left
-#           (-0.25, -0.05),   # upper right
-#           ( 0.25,  0.05),   # bottom left
-#           ( 0.25, -0.05)]   # bottom right
-#t = [0.003, 0.003, 0.003, 0.003]   # top, right, bottom, left
-#If different corner sequence change the [[0, 3, 2, 1]]
+#corners come from Geometry_and_Bending in the order:
+#front-up, front-low, rear-low, rear-up  (= UL, BL, BR, UR)
+#[[0, 3, 2, 1]] reorders them to UL, UR, BR, BL (going round the box)
+
 
 def polygon_area(Q):
     x, z = Q[:, 0], Q[:, 1] #Splits the coordinates in two columns with either containing one of the coordinates

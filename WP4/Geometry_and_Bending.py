@@ -1,23 +1,23 @@
 import numpy as np
-import math
-
+import math 
 # --- Inputs ---
-y =                  # spanwise position [m]
+# spanwise position [m]
+y=1
 c = 3.866 - 0.19798 * y  # chord length as a function of y [m]
-y_third_spar =      # y position at which the third spar stops [m]
+y_third_spar = 5.0       # y position at which the third spar stops [m]
 
 # Thicknesses of spars and skins [m]
-t_frontspar = 
-t_rearspar = 
-t_thirdspar =
-t_upskin = 
-t_lowskin = 
+t_frontspar = 0.1
+t_rearspar = 0.1
+t_thirdspar = 0.1
+t_upskin = 0.01
+t_lowskin = 0.01
 
 # Stringer areas [m^2] and counts (even numbers)
-A_stringer_up =
-A_stringer_low = 
-n_stringer_up =
-n_stringer_low = 
+A_stringer_up = 0.1
+A_stringer_low = 0.1
+n_stringer_up = 4
+n_stringer_low = 4
 
 # Important values needed
 h_frontspar = 0.1092 * c

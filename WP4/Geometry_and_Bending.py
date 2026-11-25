@@ -122,7 +122,7 @@ def centroid_corners(wingbox_zref_dimension, xref_frontspar, xref_rearspar, x_c,
 
 def compute_section(y):
     """Computes x_c, z_c, I_xx, and corners at a single spanwise station y."""
-    c = 3.866 - 0.19798 * y
+    c = 3.652 − 0.19615 * y
     h_frontspar = 0.1092 * c
     h_rearspar = 0.0732 * c
     xref_frontspar = 0.2 * c

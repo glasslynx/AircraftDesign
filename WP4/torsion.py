@@ -14,18 +14,18 @@ t_mid = t_thirdspar #[m]
 #Uses corners as input for the corners and t for the thicknesses
 #Example inputs:
 #corners = [(-0.25,  0.05),   # upper left
-#           (-0.25, -0.05),   # bottom left
-#           ( 0.25,  0.05),   # upper right
+#           (-0.25, -0.05),   # upper right
+#           ( 0.25,  0.05),   # bottom left
 #           ( 0.25, -0.05)]   # bottom right
 #t = [0.003, 0.003, 0.003, 0.003]   # top, right, bottom, left
-#If different corner sequence change the [[0, 2, 3, 1]]
+#If different corner sequence change the [[0, 3, 2, 1]]
 
 def polygon_area(Q):
     x, z = Q[:, 0], Q[:, 1] #Splits the coordinates in two columns with either containing one of the coordinates
     return 0.5 * abs(np.dot(x, np.roll(z, -1)) - np.dot(z, np.roll(x, -1))) #Shoelace formula for the area of a polygon
 
 def torsion_constant(corners, t, t_mid=None):
-    P = np.asarray(corners, float)[[0, 2, 3, 1]]  #Converts the list in usable decimals in the following order: UL,BL,UR,BR -> UL,UR,BR,BL
+    P = np.asarray(corners, float)[[0, 3, 2, 1]]  #Converts the list in usable decimals in the following order: UL,BL,UR,BR -> UL,UR,BR,BL
     A = polygon_area(P) #Area of the whole box
     s = sum(np.linalg.norm(P[(i + 1) % 4] - P[i]) / t[i] for i in range(4)) #Calculate the corner vectors length divided by the thickness and adds them together
     if t_mid is None:

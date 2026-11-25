@@ -49,13 +49,13 @@ def torsion_constant(corners, t, t_mid=None):
     sol = np.linalg.solve(M, np.array([0.0, 0.0, 1.0]))
     return 1.0 / sol[2] #Output torsion constant, two cells: J = T / (G*dtheta/dy)
 
-#Torsion constant at the y of Geometry_and_Bending
-if y <= y_third_spar:
-    J = torsion_constant(corners, t, t_mid) #With middle spar
-else:
-    J = torsion_constant(corners, t) #Without middle spar
-print(J)
-
+#Torsion constant at every spanwise station, then turned into a function J(y)
 J_vals = []
-J_vals.append(J)
-J_func = make_function(y, J_vals)
+for y in y_points:
+    corners = corners_func(y)
+    if y <= y_third_spar:
+        J_vals.append(torsion_constant(corners, t, t_mid))  #With middle spar
+    else:
+        J_vals.append(torsion_constant(corners, t))         #Without middle spar
+
+J_func = make_function(y_points, J_vals)

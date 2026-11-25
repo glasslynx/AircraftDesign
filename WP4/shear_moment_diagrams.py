@@ -7,6 +7,7 @@ from pathlib import Path
 from scipy import integrate
 
 from wingcoefficients import WingAerodynamicsInterpolator
+from Geometry_and_bending import x_c, z_c          # From Nawfel's file to get the spanwise location of the shear center
 
 
 
@@ -180,3 +181,116 @@ for row, (name, n, rho, V, m_aircraft, m_fuel) in enumerate(load_cases):
 plt.tight_layout()
 plt.savefig(folder / "shear_moment_diagrams.png", dpi=150)
 plt.show()
+
+FOLDER = Path(__file__).resolve().parent
+G = 9.80665                            # [m/s^2]
+
+# =============================================================================
+# 1. LOAD CASES (WP4.3)
+#    n [-], W [N], V [m/s], rho [kg/m3], M [-]
+#    V is V_EAS, so rho = 1.225 (sea level) gives q = 0.5 * rho * V^2.
+#    M = V_TAS / a at FL350 (10,668 m), ISA -> CHECK against your own table.
+# =============================================================================
+MTOW_KG = 31490.0
+W_MTOW  = MTOW_KG * G                  # 308,811 N
+
+LOAD_CASES = {
+    # LC-## Pos/Neg manoeuvre at V_# : dict(n = , W= , V= , rho=, M = )
+    "LC-22 Pos. manoeuvre at V_D": dict(n=2.5,  W=W_MTOW, V=135.4, rho=0.37957, M=0.77),
+    "LC-23 Neg. manoeuvre at V_C": dict(n=-1.0, W=W_MTOW, V=127.1, rho=0.37957, M=0.77),
+}
+
+# =============================================================================
+# 2. MASS DISTRIBUTION OF THE HALF WING
+#    !!! PLACEHOLDER NUMBERS - REPLACE WITH YOUR OWN VALUES !!!
+#    y [m], m' = mass per unit span [kg/m], x_cg [m] from the local leading edge
+#    (same datum as x_sc and x_0.25c). Linearly interpolated between stations.
+# =============================================================================
+MASS_Y     = np.array([0.00,  3.18,  6.37,  9.55, 12.73])
+MASS_PRIME = np.array([160.0, 145.0, 110.0,  75.0,  40.0])
+MASS_XCG   = np.array([1.46,  1.22,  0.96,  0.72,  0.46])
+
+def mass_per_unit_span(y):
+    return np.interp(y, MASS_Y, MASS_PRIME)
+
+def x_cg(y):
+    return np.interp(y, MASS_Y, MASS_XCG)
+
+# =============================================================================
+# 3. WING AND GEOMETRY  (WP3 final wing, unswept, twist ignored)
+# =============================================================================
+S, B         = 61.20, 25.47            # [m^2], [m]
+C_ROOT       = 3.652                   # [m]
+C_TIP        = 1.154                   # [m]
+TAPER        = C_TIP / C_ROOT          # 0.316
+SWEEP_LE_DEG = 0.0                     # unswept assumption (26.34 if x_sc is in a global frame)
+
+file_0  = FOLDER / "Final_Wing-(NASASC(2)-0612)_a=0.00_v=10.00ms.txt"
+file_10 = FOLDER / "Final_Wing-(NASASC(2)-0612)_a=10.00_v=10.00ms.txt"
+wing = WingAerodynamicsInterpolator(file_0, file_10, b=B, S=S, taper_ratio=TAPER)
+
+def chord_taper(y):
+    y = np.asarray(y, dtype=float)
+    return C_ROOT * (1.0 - (1.0 - TAPER) * y / (B / 2.0))
+
+def x_LE(y):
+    return np.asarray(y, dtype=float) * np.tan(np.radians(SWEEP_LE_DEG))
+
+def x_025c(y):
+    return x_LE(y) + 0.25 * chord_taper(y)
+
+# =============================================================================
+# 4. TORQUE FOR ONE LOAD CASE
+# =============================================================================
+def torque_for_case(case, npts=500):
+    n, W, V, rho, M = case["n"], case["W"], case["V"], case["rho"], case["M"]
+
+    q  = 0.5 * rho * V**2
+    CL = wing.required_CL(n, W, V, rho)
+
+    M_prime = wing.moment_per_unit_span_func(q, CL_d=CL, M=M)
+    N_prime = wing.normal_force_per_unit_span_func(q, CL_d=CL, M=M)
+
+    y = np.linspace(0.0, wing.b / 2.0, npts)
+    tau_aero    = M_prime(y) + N_prime(y) * (x_sc(y) - x_025c(y))
+    tau_inertia = -n * mass_per_unit_span(y) * G * (x_sc(y) - x_cg(y))
+    tau = tau_aero + tau_inertia
+
+    cum = cumulative_trapezoid(tau, y, initial=0.0)
+    T = cum[-1] - cum                              # integral from y to the tip
+
+    # sanity check: 2 * integral of L' over the half wing should equal n W
+    L_prime = wing.lift_per_unit_span(y, q, CL_d=CL, M=M)
+    lift_ratio = 2.0 * np.trapezoid(L_prime, y) / (n * W)
+
+    return dict(y=y, tau=tau, T=T, q=q, CL=CL,
+                alpha=wing.alpha_from_CL(CL, M=M), lift_ratio=lift_ratio)
+
+# =============================================================================
+# 5. RUN AND PLOT
+# =============================================================================
+if __name__ == "__main__":
+    results = {name: torque_for_case(c) for name, c in LOAD_CASES.items()}
+
+    print(f"{'case':<30}{'n':>6}{'q [Pa]':>10}{'CL':>8}{'alpha [deg]':>13}"
+          f"{'2*int(L)/(nW)':>15}{'T_root [N m]':>15}")
+    for name, r in results.items():
+        print(f"{name:<30}{LOAD_CASES[name]['n']:>6.2f}{r['q']:>10.0f}{r['CL']:>8.3f}"
+              f"{r['alpha']:>13.2f}{r['lift_ratio']:>15.4f}{r['T'][0]:>15.0f}")
+
+    fig, ax = plt.subplots(2, len(results), figsize=(6 * len(results), 7),
+                           sharex=True, squeeze=False)
+    for col, (name, r) in enumerate(results.items()):
+        n = LOAD_CASES[name]["n"]
+        ax[0, col].plot(r["y"], r["tau"], lw=2)
+        ax[0, col].set_title(rf"{name} ($n={n:g}$): $\tau'(y)$")
+        ax[0, col].set_ylabel(r"$\tau'$ [N·m/m]")
+        ax[1, col].plot(r["y"], r["T"], "r", lw=2)
+        ax[1, col].set_title(rf"{name}: $T(y)$")
+        ax[1, col].set_ylabel(r"$T$ [N·m]")
+        ax[1, col].set_xlabel(r"$y$ [m]")
+        for a in ax[:, col]:
+            a.grid(True)
+    plt.tight_layout()
+    plt.savefig(FOLDER / "torque_diagram.png", dpi=200)
+    plt.show()

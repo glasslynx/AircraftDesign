@@ -75,12 +75,16 @@ def lengthSkinWingbox(wingbox_zref_dimension, xref_frontspar, xref_rearspar): #c
   L_lowskin = math.sqrt((xref_rearspar-xref_frontspar)**2+(wingbox_zref_dimension[3]-wingbox_zref_dimension[1])**2)
   return[L_upskin, L_lowskin]
 
-def HeightThirdSpar(wingbox_zref_dimension, xref_thirdspar): #the height of the middle spar 
+def HeightThirdSpar(wingbox_zref_dimension, xref_thirdspar, xref_rearspar, xref_frontspar): #the height of the middle spar 
   zref_r_up = wingbox_zref_dimension[2]
   zref_f_up = wingbox_zref_dimension[0]
   zref_r_low = wingbox_zref_dimension[3]
   zref_f_low = wingbox_zref_dimension[1]
-  zref_third_up = 
+  zref_third_up = zref_f_up + (zref_r_up - zref_f_up)/(xref_rearspar-xref_frontspar)*(xref_thirdspar-xref_frontspar)
+  zref_third_low = zref_f_low + (zref_r_low - zref_f_low)/(xref_rearspar-xref_frontspar)*(xref_thirdspar-xref_frontspar)
+  h_thirdspar = zref_third_up - zref_third_low
+  zref_third = (zref_third_up + zref_third_low)/2
+  return(h_thirdspar, zref_third)
 
 wingbox_zref_dimension = wingboxdimension(zref_frontspar, zref_rearspar, h_frontspar, h_rearspar)
 print(wingbox_zref_dimension)

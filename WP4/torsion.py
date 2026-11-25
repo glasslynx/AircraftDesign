@@ -55,3 +55,7 @@ if y <= y_third_spar:
 else:
     J = torsion_constant(corners, t) #Without middle spar
 print(J)
+
+J_vals = []
+J_vals.append(J)
+J_func = make_function(y, J_vals)
